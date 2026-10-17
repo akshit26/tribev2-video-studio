@@ -35,11 +35,11 @@ class PerformanceAndValidationTests(unittest.TestCase):
         self.assertEqual(row['cta_grounding_corrections']['verdict'],'Weak CTA clarity')
 
     def test_warm_gpu_uses_shorter_bursts_without_changing_token_budget(self):
-        self.assertEqual(burst_limits({'temperature_c':63}),(128,48))
-        self.assertEqual(burst_limits({'temperature_c':69}),(128,48))
-        self.assertEqual(burst_limits({'temperature_c':71}),(96,32))
-        self.assertEqual(burst_limits({'temperature_c':75}),(96,32))
-        self.assertEqual(burst_limits({'temperature_c':78}),(64,16))
+        self.assertEqual(burst_limits({'temperature_c':63}),(96,32))
+        self.assertEqual(burst_limits({'temperature_c':69}),(48,16))
+        self.assertEqual(burst_limits({'temperature_c':71}),(48,16))
+        self.assertEqual(burst_limits({'temperature_c':75}),(24,8))
+        self.assertEqual(burst_limits({'temperature_c':78}),(24,8))
         self.assertEqual(burst_limits({'temperature_c':80}),(24,8))
         self.assertEqual(burst_limits(None),(64,16))
 

@@ -259,6 +259,20 @@ def _terminate_worker(process):
         process.wait(timeout=10)
 
 
+def _fresh_cooling_heartbeat(output: Path) -> bool:
+    progress_file = output / "worker_progress.json"
+    try:
+        return (time.time() - progress_file.stat().st_mtime < 2 and
+                json.loads(progress_file.read_text(encoding="utf-8"))
+                .get("stage", "").startswith("Pausing for GPU cooling"))
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def _temperature_stop_required(temperature: int, cooling: bool) -> bool:
+    return temperature >= GPU_STOP_C + (2 if cooling else 0)
+
+
 def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: int,
                 progress: Callable, start: int, end: int) -> tuple[bool, int, str]:
     if device != "cuda":
@@ -297,7 +311,14 @@ def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: in
                     peak = max(peak, observed["used_mb"])
                     if observed.get("temperature_c") is not None:
                         peak_temperature = max(peak_temperature or 0, observed["temperature_c"])
-                    if observed.get("temperature_c", GPU_STOP_C) >= GPU_STOP_C:
+                    temperature = observed.get("temperature_c", GPU_STOP_C)
+                    cooling = (task in {"review", "review_probe"} and
+                               temperature >= GPU_STOP_C and _fresh_cooling_heartbeat(output))
+                    # An idle reviewer may briefly peak after work stops. Do
+                    # not destroy saved progress while its fresh cooling
+                    # heartbeat proves no inference is in flight. Abort if it
+                    # reaches 84 C even then, or at 82 C during active work.
+                    if _temperature_stop_required(temperature, cooling):
                         reason = "GPU temperature guard stopped the model. Let the GPU cool before retrying."
                         _terminate_worker(process)
                         break
@@ -338,7 +359,7 @@ def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: in
     return process.returncode == 0 and not reason, peak, reason
 
 
-def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=79, resume_at=77):
+def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=75, resume_at=72):
     """Pause only near the thermal stop; use hysteresis to avoid rapid cycling."""
     cooling = False
     for _ in range(240):
@@ -523,7 +544,7 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
         "device": "cuda" if devices and all(d == "cuda" for d in devices) else "mixed" if "cuda" in devices else "cpu",
         "gpu_name": system["gpu"]["name"], "budget_mb": budget_mb, "peak_gpu_mb": peak,
         "peak_gpu_scope": "total", "models": models, "warnings": warnings, "brain_inference": False,
-        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts work size to temperature. 4 GB total GPU target with 256 MiB margin; pause at 79 C until 77 C, stop at 82 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
+        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts work size to temperature. 4 GB total GPU target with 256 MiB margin; pause at 75 C until 72 C; stop active inference at 82 C. A fresh idle cooling heartbeat may continue briefly up to 83 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
     }
     progress(58, "Preparing transcript evidence for detailed review")
     report = build_report(info, measurements, transcript, scenes, processing)

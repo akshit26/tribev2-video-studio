@@ -136,7 +136,7 @@ class WorkerMemoryTests(unittest.TestCase):
         terminate.assert_called_once_with(process)
 
     def test_warm_gpu_does_not_start_worker(self):
-        with patch.object(pipeline, "gpu_info", return_value=gpu(temperature=80)), \
+        with patch.object(pipeline, "gpu_info", return_value=gpu(temperature=76)), \
                 patch.object(pipeline.subprocess, "Popen") as spawn:
             ok, _, reason = self.worker()
         self.assertFalse(ok)
@@ -162,8 +162,25 @@ class WorkerMemoryTests(unittest.TestCase):
 
 
 class AdaptivePacingTests(unittest.TestCase):
+    def test_cooling_heartbeat_must_be_fresh_and_explicit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            progress = output / "worker_progress.json"
+            progress.write_text(json.dumps({"stage": "Pausing for GPU cooling before the next part"}))
+            self.assertTrue(pipeline._fresh_cooling_heartbeat(output))
+            progress.write_text(json.dumps({"stage": "Drafting on GPU"}))
+            self.assertFalse(pipeline._fresh_cooling_heartbeat(output))
+            progress.write_text(json.dumps({"stage": "Pausing for GPU cooling before the next part"}))
+            with patch.object(pipeline.time, "time", return_value=progress.stat().st_mtime + 3):
+                self.assertFalse(pipeline._fresh_cooling_heartbeat(output))
+
+    def test_hot_active_inference_stops_but_cooling_wait_can_finish(self):
+        self.assertTrue(pipeline._temperature_stop_required(82, False))
+        self.assertFalse(pipeline._temperature_stop_required(82, True))
+        self.assertTrue(pipeline._temperature_stop_required(84, True))
+
     def test_warm_gpu_cools_with_headroom_before_next_burst(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=79), gpu(temperature=78), gpu(temperature=77)]) as info, \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=75), gpu(temperature=73), gpu(temperature=72)]) as info, \
                 patch.object(pipeline.time, "sleep") as sleep:
             pipeline.stage_pause(Mock(), 0)
         self.assertEqual(info.call_count, 3)
@@ -176,7 +193,7 @@ class AdaptivePacingTests(unittest.TestCase):
         sleep.assert_not_called()
 
     def test_hot_gpu_waits_before_resuming(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=80), gpu(temperature=77)]), \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=78), gpu(temperature=72)]), \
                 patch.object(pipeline.time, "sleep") as sleep:
             progress = Mock()
             pipeline.stage_pause(progress, 50)
@@ -184,7 +201,7 @@ class AdaptivePacingTests(unittest.TestCase):
         self.assertIn("cooling", progress.call_args.args[1])
 
     def test_warm_but_safe_gpu_keeps_working(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", return_value=gpu(temperature=76)), \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", return_value=gpu(temperature=74)), \
                 patch.object(pipeline.time, "sleep") as sleep:
             pipeline.stage_pause(Mock(), 0)
         sleep.assert_not_called()
