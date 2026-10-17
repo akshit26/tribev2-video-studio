@@ -9,7 +9,7 @@ class CitationRecoveryTests(unittest.TestCase):
     def run_review(self, selection, omit_edit_sources=False, edit_changes=None):
         report={'video':{'duration_seconds':20},'transcript':{'language':'en','segments':[
             {'start':0,'end':3,'text':'My hair was dry.'},
-            {'start':10,'end':15,'text':'My hair feels softer now.'}]},
+            {'start':10,'end':15,'text':'My hair feels softer now. Shop now.'}]},
             'ocr':{'sources':[{'id':'O1','start':10,'end':12,'kind':'ocr','confidence':.98,'text':'Softer hair'}]}}
         summary={'summary':'A product testimonial.','verdict':'Clear message','content_language':'English',
                  'strengths':[{'title':'Specific benefit','detail':'The speaker describes softer hair.','source_ids':['S2']}],
@@ -31,8 +31,9 @@ class CitationRecoveryTests(unittest.TestCase):
                 return copy.deepcopy(selection)
             if label.startswith('Part 1'):return copy.deepcopy(summary)
             if label.startswith('Part 2'):
-                row={'grade':3,'rationale':rationale,'source_ids':['S2']}
-                if 'Message and payoff' in label:row.pop('source_ids')
+                row={'grade':2 if ('Voice and delivery' in label or 'Visual presentation' in label) else 3,
+                     'rationale':rationale,'source_ids':['S2']}
+                if 'Script and payoff' in label:row.pop('source_ids')
                 return row
             return copy.deepcopy(edit)
         return generate_parts(report,[],complete,lambda *_:None),calls,rationale

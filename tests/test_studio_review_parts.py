@@ -4,10 +4,61 @@ import unittest
 from pathlib import Path
 
 from studio_review import RUBRIC, review_command
-from studio_review_parts import evidence_chunks, generate_parts, generate_bursts, repeated_output
+from studio_review_parts import evidence_chunks, generate_parts, generate_bursts, omit_recognition_faults, polish_unsupported_edits, repeated_output
 
 
 class ReviewPartsTests(unittest.TestCase):
+    def test_ocr_misread_does_not_become_creative_rationale(self):
+        rationale = ("The script repeats ingredients without a clear payoff. "
+                     "OCR errors in the product name undermine branding.")
+        self.assertEqual(omit_recognition_faults(rationale),
+                         "The script repeats ingredients without a clear payoff.")
+
+    def test_unsupported_edits_are_replaced_with_verifiable_directions(self):
+        report = {"transcript": {"segments": [{"start": 0, "end": 4,
+                   "text": "Plum shampoo kills microbes", "words": []}]},
+                  "visual": {"sources": [{"id": "V1", "kind": "visual", "start": 0,
+                               "end": 1, "text": "person by curtain"},
+                              {"id": "V2", "kind": "visual", "start": 3,
+                               "end": 4, "text": "person by curtain"}]}}
+        raw = {"dimensions": [{"key": "credibility", "rationale": "The claim is not backed by proof"}],
+               "edits": [
+                   {"targets": ["credibility"], "replacement": "Helps reduce microbes"},
+                   {"targets": ["cta"], "replacement": "COMMENT [PLUM SHAMPOO PRODUCT] FOR LINK"},
+                   {"targets": ["visual"], "instruction": "Fix OCR spelling", "replacement": "Fix typo"}]}
+        polish_unsupported_edits(raw, report)
+        self.assertIn("Brand-approved", raw["edits"][0]["replacement"])
+        self.assertEqual(raw["edits"][1]["replacement"], "COMMENT 'PLUM' FOR LINK")
+        self.assertEqual(raw["edits"][2]["source_ids"], ["V1", "V2"])
+        self.assertIn("product-use shot", raw["edits"][2]["instruction"])
+
+    def test_slogan_cannot_receive_strong_cta_and_batch_keeps_valid_rows(self):
+        report = {"video": {"duration_seconds": 8}, "transcript": {"language": "en", "segments": [
+            {"start": 0, "end": 8, "text": "Do not rinse it. Resolve it."}]}}
+        calls = []
+        def complete(prompt, tokens, label):
+            calls.append(label)
+            if label.startswith("Part 1"):
+                return {"summary": "Product slogan without a next action", "verdict": "Needs a clear next action",
+                        "content_language": "English", "strengths": [{"title": "Memorable phrase",
+                        "detail": "The slogan is short", "source_ids": ["S1"]}], "uncertainties": []}
+            if label == "Part 2/3: all ratings":
+                return {"dimensions": [{"key": key, "grade": 3 if key == "cta" else 2,
+                         "rationale": "The source supports this assessment", "source_ids": ["S1"]}
+                         for key, *_ in RUBRIC]}
+            if label.startswith("Part 2/3: rating Call to action"):
+                return {"grade": 1, "rationale": "The closing slogan has no viewer action or destination",
+                        "source_ids": ["S1"]}
+            if label.startswith("Part 3"):
+                return {"title": "Add action", "operation": "insert", "source_ids": ["S1"],
+                        "instruction": "Add a clear next step", "replacement": "Visit the approved page",
+                        "english_gloss": "Visit the approved page", "why": "The slogan has no next step",
+                        "verify": "Action and destination appear together"}
+            self.fail(f"Unexpected regeneration: {label}")
+        _, review = generate_parts(report, [], complete, lambda *_: None)
+        self.assertEqual(next(row["grade"] for row in review["dimensions"] if row["key"] == "cta"), 1)
+        self.assertEqual(sum(label.startswith("Part 2/3: rating") for label in calls), 1)
+
     def test_partial_unicode_generation_resumes_without_restarting_text(self):
         saved=[];interrupted=True
         def request(route,body,**kwargs):
@@ -36,13 +87,13 @@ class ReviewPartsTests(unittest.TestCase):
         def complete(prompt,tokens,label):
             if label.startswith('Part 1'):
                 return {"summary":"Assessment","verdict":"Check speech","content_language":"Tamil","strengths":[{"title":"Topic","detail":"Evidence","source_ids":["S1"]}],"uncertainties":[]}
-            if label == 'Part 2/3: all six ratings':
+            if label == 'Part 2/3: all ratings':
                 return {'dimensions':[{'key':key,'grade':0,'rationale':'Feature not established','source_ids':[]} for key, *_ in RUBRIC]}
             if label.startswith('Part 2'):
                 return {"grade":0,"rationale":"Feature not established","source_ids":[]}
             raise ValueError('Repeated text detected')
         raw,review=generate_parts(report,[],complete,lambda *_:None)
-        self.assertEqual(len(review['dimensions']),6)
+        self.assertEqual(len(review['dimensions']),len(RUBRIC))
         self.assertEqual(len(review['edits']),3)
         self.assertTrue(all('Native-language copy could not' in e['replacement'] for e in review['edits']))
         self.assertTrue(review['uncertainties'])
@@ -100,10 +151,14 @@ class ReviewPartsTests(unittest.TestCase):
     def test_all_criteria_and_weaknesses_are_generated_in_separate_requests(self):
         report = {"video": {"duration_seconds": 20}, "transcript": {"language": "hi", "segments": [
             {"start": 0, "end": 5, "text": "मूल भाषा में वीडियो"}]}}
+        report["ocr"] = {"sources": [{"id": "O1", "start": 4, "end": 5,
+                                      "kind": "ocr", "confidence": .99, "text": "SHOP NOW"}]}
         source = [{"id": "S1", **report["transcript"]["segments"][0]}]
         summary = {"summary": "Detailed summary", "verdict": "Improve", "content_language": "Hindi",
                    "strengths": [{"title": "Best part", "detail": "Evidence", "source_ids": ["S1"]}],
-                   "uncertainties": []}
+                   "uncertainties": [],
+                   "narrative_breakdown": dict.fromkeys(("hook", "problem", "product", "resolution"), "Observed message"),
+                   "linguistic_review": {"noted_slang": [], "spoken_accuracy": "Check the audio"}}
         edit = {"title": "Edit", "operation": "overlay", "source_ids": ["S1"],
                 "instruction": "Change opening", "replacement": "बदलाव", "english_gloss": "Change",
                 "why": "Clarify meaning", "verify": "One clear message"}
@@ -113,7 +168,7 @@ class ReviewPartsTests(unittest.TestCase):
             calls.append(label)
             if label.startswith("Part 1"):
                 return copy.deepcopy(summary)
-            if label == "Part 2/3: all six ratings":
+            if label == "Part 2/3: all ratings":
                 return {"dimensions":[{"key":key,"grade":2,"rationale":"Evidence","source_ids":["S1"]} for key, *_ in RUBRIC]}
             if label.startswith("Part 2"):
                 return {"grade": 2, "rationale": "Evidence", "source_ids": ["S1"]}
@@ -125,9 +180,9 @@ class ReviewPartsTests(unittest.TestCase):
             return copy.deepcopy(edit)
         raw, review = generate_parts(report, source, complete, lambda fraction, label: progress.append(fraction))
         self.assertEqual(len(calls), 5)
-        self.assertEqual(len(review["dimensions"]), 6)
+        self.assertEqual(len(review["dimensions"]), len(RUBRIC))
         self.assertEqual(len(review["edits"]), 3)
-        self.assertEqual({e["targets"][0] for e in review["edits"]}, {'hook','clarity','cta'})
+        self.assertEqual({e["targets"][0] for e in review["edits"]}, {'visual','hook','clarity'})
         self.assertEqual(review["overall_score"], 50)
         self.assertEqual(progress, sorted(progress))
 

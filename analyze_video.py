@@ -82,11 +82,18 @@ def inspect_video(video: Path, output: Path) -> dict:
             frame.save(output / filename)
             thumbnails.append(f'<figure><img src="{filename}"><figcaption>{second:.2f} s</figcaption></figure>')
         if clip.audio is not None:
-            audio_samples = clip.audio.to_soundarray(fps=16000)
+            from studio_av_signals import decode_pcm, voice_observations
+            audio_samples = decode_pcm(video)
+            if not len(audio_samples):
+                raise ValueError("The video reports audio but FFmpeg could not decode any samples")
+            (output / "voice_signals.json").write_text(
+                json.dumps(voice_observations(audio_samples), ensure_ascii=False, indent=2), encoding="utf-8")
             for row in rows:
                 second = row["time_seconds"]
                 end = min(second + 1, clip.duration)
                 samples = audio_samples[int(second * 16000):int(end * 16000)]
+                if not len(samples):
+                    samples = audio_samples[-1:]
                 row["audio_rms_dbfs"] = float(20 * np.log10(max(float(np.sqrt(np.mean(samples ** 2))), 1e-10)))
                 row["audio_peak_dbfs"] = float(20 * np.log10(max(float(np.abs(samples).max()), 1e-10)))
     info["largest_sampled_visual_changes_seconds"] = [r["time_seconds"] for r in sorted(rows[1:], key=lambda r: r["frame_difference_0_255"], reverse=True)[:5]]

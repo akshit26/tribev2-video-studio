@@ -338,7 +338,7 @@ def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: in
     return process.returncode == 0 and not reason, peak, reason
 
 
-def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=76, resume_at=73):
+def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=75, resume_at=72):
     """Warm GPUs use smaller inference bursts; retain the separate 82 C stop."""
     cooling = False
     for _ in range(240):
@@ -487,15 +487,8 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
         if task == "vision" and ocr is None:
             progress(41,"Reading original on-screen text locally")
             ocr=ocr_analysis(video,output,lambda f,s:progress(41+int(f*6),s))
-            available=ocr.get('sources',[])
-            selected=[available[round(i*(len(available)-1)/min(11,len(available)-1))] for i in range(min(12,len(available)))] if len(available)>1 else available
-            if selected:
-                scenes=[{'time_seconds':s['start'],'frame_file':s['frame_file'],'caption':'Selected source frame'} for s in selected]
-                _write_json(output/'scene_manifest.json',scenes)
-        if task == "vision" and len(ocr.get('sources', [])) >= 6:
-            warnings.append("Generic frame captions were skipped because trusted OCR supplied enough visual evidence; selected source frames remain in the report.")
-            progress(57, "Using trusted OCR frames as visual evidence")
-            continue
+        # OCR says what text appeared, not whether the footage is engaging or
+        # visually clear. Always describe the evenly spaced source frames too.
         if task == "emotion" and (not transcript or not transcript.get("segments") or transcript.get("language") != "en"):
             warnings.append("English-language emotion classification needs a recognized English transcript; this stage was skipped.")
             continue
@@ -530,11 +523,24 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
         "device": "cuda" if devices and all(d == "cuda" for d in devices) else "mixed" if "cuda" in devices else "cpu",
         "gpu_name": system["gpu"]["name"], "budget_mb": budget_mb, "peak_gpu_mb": peak,
         "peak_gpu_scope": "total", "models": models, "warnings": warnings, "brain_inference": False,
-        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts delays to temperature. 4 GB total GPU target with 256 MiB margin; temperature-adaptive bursts; pause at 76 C until 73 C, stop at 82 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
+        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts delays to temperature. 4 GB total GPU target with 256 MiB margin; temperature-adaptive bursts; pause at 75 C until 72 C, stop at 82 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
     }
     progress(58, "Preparing transcript evidence for detailed review")
     report = build_report(info, measurements, transcript, scenes, processing)
     report["ocr"] = ocr
+    from studio_av_signals import voice_from_video, visual_observations
+    voice_file = output / "voice_signals.json"
+    if voice_file.exists():
+        voice = json.loads(voice_file.read_text(encoding="utf-8"))
+    elif not info["has_audio"]:
+        voice = {"available": False, "sources": [], "note": "No audio stream."}
+    else:
+        voice = voice_from_video(video)
+        _write_json(voice_file, voice)
+    visual = visual_observations(output, scenes, info["duration_seconds"])
+    _write_json(output / "visual_signals.json", visual)
+    report["voice"] = voice
+    report["visual"] = visual
     from studio_review import settings
     report["review_context"] = settings(output)
     if (output / "brand_context.json").exists():

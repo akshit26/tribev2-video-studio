@@ -19,14 +19,16 @@ LANGUAGES = {"auto": "Auto detect / mixed speech", "hi": "Hindi", "ta": "Tamil",
              "pa": "Punjabi", "ur": "Urdu", "as": "Assamese", "ne": "Nepali", "sa": "Sanskrit",
              "sd": "Sindhi", "en": "English"}
 RUBRIC = [
-    ("hook", "Opening hook", 25, "A specific reason to keep watching within the first 3-5 seconds. A concrete first-person problem is a valid hook; a question or explicit promise is not mandatory. Do not deduct points merely because sampled captions omit visual detail; missing evidence is unknown, not an absent visual hook."),
-    ("clarity", "Message and payoff", 15, "A clear audience problem, intelligible central message, and concrete payoff without unverified promises."),
-    ("structure", "Story and pacing", 15, "Progression from setup to payoff, no repetitive detours, room to understand key points; no universal English words/min threshold."),
-    ("credibility", "Evidence and credibility", 15, "Specific, supported claims; distinguish a demonstration, testimonial, and actual proof. Product promises alone are not proof."),
-    ("emotion", "Emotional relevance", 10, "A relatable situation, meaningful stakes or satisfying payoff in the content; not measured viewer emotions."),
-    ("cta", "Call to action", 20, "One relevant, feasible next action with a reason to act and a clear destination. Understand common social-video workflows in any language: 'comment LINK and I will DM you' specifies the action, keyword, and delivery destination; a visible URL is unnecessary. Product-in-DM wording normally means product information/link, not a physical item. The reason to act may be established earlier. Grade clarity and friction, not proof of prior message delivery. Do not infer an absent visual CTA from incomplete captions."),
+    ("hook", "Opening hook", 15, "A specific reason to keep watching within the first 3-5 seconds, supported by the opening speech or screen. A stated problem alone is functional; grade 3 requires a striking execution or immediate payoff."),
+    ("clarity", "Script and payoff", 15, "The actual spoken script has a focused audience problem, concrete product role and payoff. Penalize filler, vague promises and repetitive ingredient lists; do not penalize normal regional phrasing."),
+    ("structure", "Story and pacing", 10, "The spoken and visual sequence progresses efficiently toward a payoff. A continuous monologue or long static stretch needs a reason to justify its length; no universal English words/min threshold."),
+    ("credibility", "Evidence and credibility", 10, "Specific, supported claims. Distinguish a visible demonstration, testimonial and actual proof; packaging claims alone do not prove efficacy."),
+    ("emotion", "Emotional relevance", 5, "Show or express a meaningful audience stake or satisfying payoff. A relatable topic alone is not a compelling emotional execution; do not claim measured viewer feelings."),
+    ("cta", "Call to action", 10, "One feasible viewer action, with clear destination or response. A slogan such as 'resolve it' is not an actionable CTA. 'Comment LINK for a DM' is actionable without a URL."),
+    ("voice", "Voice and delivery", 15, "Judge spoken pacing, pauses, intelligibility and measured loudness/pitch variation from A audio sources alongside S speech. Do not infer an emotion or a performance style from text alone; music can distort audio measures. Grade 3 needs convincing delivery evidence."),
+    ("visual", "Visual presentation", 20, "Judge the actual sampled frames using V evidence: composition, lighting, visual variety, product visibility and demonstration, and readable overlays using O evidence. Static talking-head footage and repeated framing can limit a long ad even when the script is clear. Do not infer visual appeal from OCR text alone or treat blur/brightness numbers as an aesthetic score."),
 ]
-ANCHORS = "0=absent or seriously confusing; 1=weak/vague; 2=functional with clear weaknesses; 3=strong and specific; 4=exceptionally clear with strong evidence. Use integer grades only."
+ANCHORS = "0=absent or seriously confusing; 1=weak/vague; 2=functional with clear weaknesses; 3=strong execution supported by the relevant medium; 4=exceptional execution with strong evidence. A clear transcript does not prove engaging voice or visuals. Use integer grades only."
 
 
 def normalize_operation(value):
@@ -42,8 +44,13 @@ def normalize_absence_evidence(row, source_ids):
 
 
 def review_signature(output):
-    content = (output / "review_input.json").read_text(encoding="utf-8")
-    return hashlib.sha256(("indic-decode-v2\n" + SYSTEM + MODEL.name + content).encode("utf-8")).hexdigest()
+    report = json.loads((output / "review_input.json").read_text(encoding="utf-8"))
+    # Runtime limits and progress metadata can change between resumptions;
+    # they do not change the creative evidence or the review prompt.
+    report.pop("processing", None)
+    report.pop("created_at", None)
+    content = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(("av-creative-v2\n" + SYSTEM + str(RUBRIC) + MODEL.name + content).encode("utf-8")).hexdigest()
 
 
 def settings(output: Path) -> dict:
@@ -59,8 +66,13 @@ def evidence(report: dict) -> list[dict]:
     from studio_ocr import reading_text
     spoken = [{"id": f"S{i+1}", "start": s["start"], "end": s["end"], "text": s["text"], "kind":"speech"}
             for i, s in enumerate(report.get("transcript", {}).get("segments", [])) if s.get("text", "").strip()]
-    return spoken + [dict({k:s[k] for k in ("id","start","end","kind","confidence")},text=reading_text(s['text']))
-                     for s in report.get("ocr",{}).get("sources",[]) if s.get("text","").strip()]
+    on_screen = [dict({k:s[k] for k in ("id","start","end","kind","confidence")},text=reading_text(s['text']))
+                 for s in report.get("ocr",{}).get("sources",[]) if s.get("text","").strip()]
+    voice = [{k:s[k] for k in ("id","start","end","kind","text")}
+             for s in report.get("voice",{}).get("sources",[]) if s.get("text","").strip()]
+    visual = [{k:s[k] for k in ("id","start","end","kind","text")}
+              for s in report.get("visual",{}).get("sources",[]) if s.get("text","").strip()]
+    return spoken + on_screen + voice + visual
 
 
 def transcript_quality(report):
@@ -139,7 +151,7 @@ def validate_review(raw: dict, report: dict) -> dict:
                                "grade": dimension["grade"], "goal_grade": 3,
                                "reason": dimension["rationale"], "edit_numbers": matching})
     from studio_estimate import apply_estimate
-    result = {"version": "semantic-review-3", "available": True,
+    result = {"version": "semantic-review-4", "available": True,
             "model": "Qwen3-4B-Instruct-2507 / Q4_K_M", "overall_score": None if quality["withhold_score"] else total,
             "transcript_quality": quality,
             "summary": text(raw.get("summary"), 5000), "verdict": text(raw.get("verdict"), 200),
@@ -166,6 +178,12 @@ Do not label these expressions mistakes, slurs, mistranslations or weak language
 Only note a phrase as present if it actually appears in source evidence.
 S IDs are speech. O IDs are OCR from actual frames, primary evidence for screen
 text, including stickers, problem callouts, product labels and closing CTAs.
+A IDs are measured audio-window clues about variation, level and quiet spans;
+they do not identify emotion and may include music. V IDs are sampled frame
+descriptions plus brightness/contrast/sharpness measurements; descriptions may
+be wrong and numbers do not establish beauty. Use A and V evidence when judging
+voice and visual presentation. A text-only claim cannot earn a strong voice or
+visual grade. A slogan is not a viewer action or a strong CTA by itself.
 Check BOTH speech and OCR before grading CTA. COMMENT [KEYWORD] FOR LINK is a
 clear action and response mechanism; it does not need a second spoken CTA or a
 spoken URL. Preserve its exact keyword; do not invent a delivery complaint.

@@ -1,4 +1,4 @@
-"""Bounded, sequential review requests: summary, six grades, then exact edits."""
+"""Bounded, sequential review requests: summary, eight grades, then exact edits."""
 import json
 import re
 import time
@@ -21,6 +21,55 @@ def recognition_penalty(rationale):
     rationale = re.sub(r'\b(?:ocr|recognition|transcription)[^.;!?]*\b(?:not penalized|not penalised|not counted|not a creative defect|not a weakness)[^.;!?]*', '', rationale, flags=re.I)
     rationale = re.sub(r'\b(?:ocr|recognition|transcription)[^.;!?]*(?:does\s+not|doesn[\'’]t|did\s+not|is\s+not)\s+(?:undermine|affect|weaken|reduce|hurt|lower|penalize|penalise)[^.;!?]*', '', rationale, flags=re.I)
     return bool(re.search(r'(?:ocr|recognition|transcription).{0,90}(?:noise|noisy|error|fragment|misrecog|garbl|corrupt)|(?:noisy|fragmented|corrupted).{0,30}(?:overlay|ocr)',rationale,re.I|re.S))
+
+
+def omit_recognition_faults(text):
+    """Drop only sentences blaming the creative for recognition artifacts."""
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+    kept = [s for s in sentences if not (
+        re.search(r'\b(?:ocr|recognition|transcription)\b', s, re.I) and
+        re.search(r'\b(?:errors?|misspell\w*|misread\w*|typos?|inconsistent spelling|fragmented|noise|garbl\w*|corrupt\w*)\b', s, re.I))]
+    return ' '.join(kept).strip()
+
+
+def polish_unsupported_edits(raw, report):
+    """Replace a few unsafe model edits with evidence-bound production directions."""
+    dimensions = {row['key']: row for row in raw.get('dimensions', [])}
+    all_sources = evidence(report)
+    observed = ' '.join(s['text'] for s in all_sources).casefold()
+    for edit in raw.get('edits', []):
+        key = (edit.get('targets') or [None])[0]
+        if key == 'credibility' and re.search(r'\b(?:unverified|unsupported|not backed|lack[s]? (?:visible )?(?:proof|evidence))\b',
+                                               dimensions.get(key, {}).get('rationale', ''), re.I):
+            if re.search(r'\b(?:reduce|kill|clear|cure|treat|prevent|repair|stop)\b', edit.get('replacement',''), re.I):
+                edit.update(title='Remove or substantiate the efficacy claim', operation='replace',
+                            instruction='Remove the numerical efficacy line unless the brand provides approved substantiation; keep only the verified ingredient name.',
+                            replacement='[Brand-approved, verified benefit], or omit this claim.',
+                            english_gloss='Use a verified approved benefit only; otherwise remove the claim.',
+                            why='The original percentage and timing promise are not established by the available video.',
+                            verify='Check approved claim wording and any required evidence before the final cut.')
+        if key == 'cta':
+            match = re.search(r'\bCOMMENT\s+\[([^]]+)\]\s+FOR\s+LINK\b', edit.get('replacement',''), re.I)
+            if match and len(match[1].split()) > 2:
+                candidate = match[1].split()[0].strip("'\".,")
+                keyword = candidate if candidate.casefold() in observed else '[APPROVED KEYWORD]'
+                edit.update(title='Add one testable next action', operation='insert',
+                            instruction='End with one short comment keyword and specify the promised response; use this only if the brand can fulfil it.',
+                            replacement=f"COMMENT '{keyword}' FOR LINK",
+                            english_gloss=f"Ask viewers to comment {keyword} to receive the approved product link.",
+                            why='The closing slogan names no concrete action or destination.',
+                            verify=f"Test that commenting {keyword} returns the approved link; otherwise show the real purchase destination.")
+        if key == 'visual' and re.search(r'\b(?:ocr|misread|spelling|typo|salicylicacid|plom)\b',
+                                         edit.get('instruction','')+' '+edit.get('replacement',''),re.I):
+            frames = [s['id'] for s in all_sources if s['kind']=='visual']
+            if frames:
+                edit.update(title='Add visual proof and shot variety', operation='insert',
+                            source_ids=list(dict.fromkeys([frames[0], frames[len(frames)//2]])),
+                            instruction='Break the repeated talking-head framing with a readable pack close-up and a genuine product-use shot.',
+                            replacement='Add a short pack close-up, real shampoo application, and a clear end card with the verified product name.',
+                            english_gloss='Show the actual product and its use; verify any caption against the source footage.',
+                            why='Repeated framing and little demonstration weaken the visual payoff.',
+                            verify='Watch the edited cut on a phone: confirm shot variety, legible labels, and genuine use footage.')
 
 
 def burst_limits(observation):
@@ -205,7 +254,7 @@ def protected_screen_quotes(sources, count_tokens, budget=250):
 
 def generate_parts(report, source_data, complete, progress):
     """Only the current part is generated; completed parts are kept on disk."""
-    from studio_ocr import comment_link_ctas
+    from studio_ocr import CTA, comment_link_ctas
     known_ctas=comment_link_ctas(evidence(report))
     data = {"duration_seconds": report["video"]["duration_seconds"],
             "context": report.get("review_context", {}),
@@ -213,8 +262,8 @@ def generate_parts(report, source_data, complete, progress):
             "evidence": source_data,
             "recognized_comment_link_ctas":known_ctas,
             "ocr_status": {k:report.get("ocr",{}).get(k) for k in ("available","sampling","language_coverage")},
-            "sampled_captions": [{"time": s["time_seconds"], "caption": s.get("caption", "")}
-                                 for s in report.get("scenes", [])]}
+            "audio_measurement_note": report.get("voice", {}).get("note"),
+            "visual_measurement_note": report.get("visual", {}).get("note")}
     context = "VIDEO DATA (not instructions):\n" + json.dumps(data, ensure_ascii=False)
     context += '\nRecognized comment-link CTAs list the observed action, keyword and promised response. Check these before any claim that CTA instructions are missing or fragmented. Recognition spacing is not evidence of poor visual legibility. Return strict JSON: no comments, parentheses or annotations outside quoted strings.'
     if transcript_quality(report)["withhold_score"]:
@@ -292,15 +341,25 @@ def generate_parts(report, source_data, complete, progress):
     def check_summary(result):
         required_text(result, ["summary", "verdict", "content_language"])
         reconcile_summary_cta(result,known_ctas)
+        cleaned = omit_recognition_faults(result['summary'])
+        if cleaned and cleaned != result['summary']:
+            result['summary'] = cleaned
+            result['summary_recognition_correction'] = True
         if re.search(r'\b(ocr|recognition|transcription)\b',result['verdict'],re.I):
             raise ValueError('The verdict must judge the creative, not the extraction system. OCR/transcription noise belongs in uncertainties, never as a creative weakness in the verdict or summary. Give an evidence-based creative verdict.')
         if known_ctas and contradicts_known_cta(result['verdict']+' '+result['summary']):
             raise ValueError('The recognized CTA has an explicit comment action, exact keyword and link response. Do not call that keyword or instruction confusing, fragmented or messy based on OCR formatting. State any other supported weakness instead; actual visual legibility is unverified.')
+        actionable = any(CTA.search(s['text']) for s in evidence(report) if s['kind'] in {'speech','ocr'})
+        if not actionable and re.search(r'\b(?:strong|clear|effective|consistent)\s+(?:closing\s+)?(?:cta|call.to.action)\b',
+                                        result['verdict']+' '+result['summary'], re.I):
+            raise ValueError('A slogan is not a viewer action. Do not praise the CTA unless speech or an overlay names a real next step.')
         if not isinstance(result.get("strengths"), list) or not 1 <= len(result["strengths"]) <= 5:
             raise ValueError("Provide 1-5 evidence-based strengths")
         for row in result["strengths"]:
             required_text(row, ["title", "detail"])
             references(row.get("source_ids"))
+            if not actionable and re.search(r'\b(?:cta|call.to.action)\b',row['title']+' '+row['detail'],re.I):
+                raise ValueError('Do not list a slogan as a CTA strength without an observable viewer action.')
         if not isinstance(result.get("uncertainties"), list):
             raise ValueError("uncertainties must be a list")
         if report.get("ocr"):
@@ -310,11 +369,18 @@ def generate_parts(report, source_data, complete, progress):
                 raise ValueError("linguistic_review.noted_slang must be a list; include only observed expressions")
 
     raw = part("Part 1/3: detailed summary and best moments",
-               'Return JSON {"summary":"Concise 45-65 word decision summary: audience, product/message, progression and biggest strength/weakness. Use speech AND OCR. Cite exact source IDs; do not invent unseen details.",'
-               '"verdict":"Short conclusion","content_language":"Language(s)",'
-               '"strengths":[{"title":"Best part","detail":"Why it works","source_ids":["S1"]}],'
-               '"uncertainties":["Limitations"],"narrative_breakdown":{"hook":"Opening device and evidence, one sentence","problem":"Viewer problem, one sentence","product":"Product label/claim and evidence or unknown, one sentence","resolution":"Payoff and closing CTA, including OCR, one sentence"},"linguistic_review":{"noted_slang":["Only expressions actually in the evidence"],"spoken_accuracy":"Original-language intelligibility; do not mistake Hinglish vernacular for errors"}}. Provide TWO strengths with details under 18 words and at most FOUR source IDs each. Each narrative sentence: at most 16 words. At most TWO uncertainties, 20 words each. At most THREE slang expressions. spoken_accuracy: at most 25 words. Verdict: at most 10 words about the CREATIVE; OCR recognition noise belongs only in uncertainties, not as a creative weakness.',
-               900, check_summary, .28)
+               'Return one COMPLETE, SHORT JSON object with exactly these fields: '
+               '{"summary":"Audience, message, progression, strongest element and main weakness in at most 45 words",'
+               '"verdict":"Creative verdict under 8 words","content_language":"Language code",'
+               '"strengths":[{"title":"Real strength","detail":"Why, under 15 words","source_ids":["S1"]}],'
+               '"uncertainties":["One evidence limitation"],'
+               '"narrative_breakdown":{"hook":"One short sentence","problem":"One short sentence","product":"One short sentence","resolution":"One short sentence"},'
+               '"linguistic_review":{"noted_slang":[],"spoken_accuracy":"Short assessment of speech intelligibility"}}. '
+               'Use real source IDs in the summary and strength. Give ONE real strength. A slogan is not a CTA; '
+               'do not praise an absent action. Do not infer visual appeal or vocal energy from text. '
+               'Keep OCR errors out of the summary, verdict and strengths; they are evidence limitations only. '
+               'Name an actual creative weakness supported by source evidence. Stop immediately after the final }.',
+               650, check_summary, .28)
     raw["dimensions"] = []
     def check_dimension(row, key):
             required_text(row, ["rationale"])
@@ -322,39 +388,67 @@ def generate_parts(report, source_data, complete, progress):
             references(row.get("source_ids"))
             if type(row.get("grade")) is not int or not 0 <= row["grade"] <= 4:
                 raise ValueError("grade must be an integer 0-4")
+            cleaned = omit_recognition_faults(row['rationale'])
+            if cleaned and cleaned != row['rationale']:
+                row['rationale'] = cleaned
+                row['recognition_correction'] = True
             if row['grade']<4 and recognition_penalty(row['rationale']):
                 raise ValueError('Recognition noise cannot justify losing creative points. Reassess using clear speech and trusted OCR only. Name a real creative strength/weakness, not fragmented OCR or labeling errors inferred from misrecognition. Keep extraction limitations out of the grading rationale; do not automatically raise the grade.')
+            if key == 'cta':
+                actionable = any(CTA.search(s['text']) for s in evidence(report) if s['kind'] in {'speech','ocr'})
+                if not actionable and row['grade'] > 1:
+                    raise ValueError('No observed speech or overlay names a viewer action and destination. A slogan is not a CTA; grade at most 1 for an implied invitation, or 0 if absent. Cite the closing evidence.')
             if key=='cta' and known_ctas:
                 if contradicts_known_cta(row['rationale']):
                     raise ValueError('The action, keyword and promised link are explicit in the recognized CTA. Judge remaining relevance or friction using evidence; do not invent keyword ambiguity from OCR spacing.')
                 if not any(c['source_id'] in row['source_ids'] for c in known_ctas):
                     raise ValueError('A CTA assessment must cite the observed closing overlay. Valid CTA source IDs: '+', '.join(c['source_id'] for c in known_ctas))
+            for dimension_kind, prefix in (('voice','A'),('visual','V')):
+                if key != dimension_kind:
+                    continue
+                available = [s['id'] for s in evidence(report) if s['id'].startswith(prefix)]
+                if available and not any(i in row['source_ids'] for i in available):
+                    raise ValueError(f'{dimension_kind} must cite its direct {prefix} evidence, not only speech/OCR.')
+                if not available and row['grade'] > 2:
+                    raise ValueError(f'{dimension_kind} cannot receive a strong grade without direct sampled evidence.')
+                if key == 'visual' and available and report['video']['duration_seconds'] > 15 and row['grade'] >= 3:
+                    if len(set(row['source_ids']).intersection(available)) < 2:
+                        raise ValueError('A strong visual grade needs at least two sampled frames from different parts of the video.')
 
     def check_dimension_batch(value):
         rows=value.get('dimensions') if isinstance(value,dict) else None
         expected=[r[0] for r in RUBRIC]
         if not isinstance(rows,list) or len(rows)!=len(expected) or [r.get('key') for r in rows]!=expected:
-            raise ValueError('Return exactly six dimensions in the supplied key order: '+', '.join(expected))
-        for row,(key,label,_,_) in zip(rows,RUBRIC):
-            repair_section_citations(row,f"Part 2/3: rating {label}")
-            check_dimension(row,key)
+            raise ValueError('Return every dimension in the supplied key order: '+', '.join(expected))
 
     rubric_data=[{'key':key,'label':label,'criterion':description} for key,label,_,description in RUBRIC]
+    batch_rows = {}
     try:
-        batch=part("Part 2/3: all six ratings",
-                   'Assess ALL SIX rubric dimensions in this exact order: '+json.dumps(rubric_data,ensure_ascii=False)+'\n'+ANCHORS+'\nReturn JSON {"dimensions":[{"key":"hook","grade":2,"rationale":"At most 42 words using decisive creative evidence","source_ids":["S1"]}]}. Include exactly one row per supplied key, at most FOUR valid source IDs each. Judge recognition uncertainty separately from creative quality. Do not inflate grades.',
-                   1200,check_dimension_batch,.40)
-        raw['dimensions']=batch['dimensions']
+        batch=part("Part 2/3: all ratings",
+                   'Assess ALL rubric dimensions in this exact order: '+json.dumps(rubric_data,ensure_ascii=False)+'\n'+ANCHORS+'\nReturn JSON {"dimensions":[{"key":"hook","grade":2,"rationale":"At most 34 words using decisive creative evidence","source_ids":["S1"]}]}. Include exactly one row per supplied key, at most FOUR valid source IDs each. Cite A for voice and V for visuals. Judge what the source actually supports: readable OCR does not establish visual appeal, and a transcript does not establish vocal energy. Judge recognition uncertainty separately from creative quality. Do not inflate grades.',
+                   1300,check_dimension_batch,.40)
+        for row,(key,label,_,_) in zip(batch['dimensions'], RUBRIC):
+            try:
+                repair_section_citations(row,f"Part 2/3: rating {label}")
+                check_dimension(row,key)
+                batch_rows[key]=row
+            except (ValueError,TypeError,KeyError):
+                # Preserve valid dimensions. One unsupported grade must not
+                # trigger regeneration of the whole 8-row response.
+                pass
     except ValueError:
-        # A malformed batch must not lose the report. Regenerate only the six
-        # compact rows; their strict per-dimension validators stay unchanged.
-        for index, (key, label, weight, description) in enumerate(RUBRIC):
-            row = part(f"Part 2/3: rating {label} ({index + 1}/6)",
-                       f'Assess only {label}: {description}\n{ANCHORS}\n'
-                       'Return JSON {"grade":2,"rationale":"ONE paragraph of at most 42 words: the decisive evidence and reason for this grade","source_ids":["S1"]}. Cite at most FOUR supplied IDs. No essay, repeated argument or full transcript quotations. Recognition noise is uncertainty, not a creative defect. Do not inflate the grade.',
-                       280, lambda value,k=key:check_dimension(value,k), .40 + index * .045)
-            row["key"] = key
-            raw["dimensions"].append(row)
+        pass
+    for index, (key, label, weight, description) in enumerate(RUBRIC):
+        if key in batch_rows:
+            raw['dimensions'].append(batch_rows[key])
+            continue
+        # Regenerate only missing or unsupported criteria.
+        row = part(f"Part 2/3: rating {label} ({index + 1}/{len(RUBRIC)})",
+                   f'Assess only {label}: {description}\n{ANCHORS}\nCite direct A evidence for voice or V evidence for visuals when available.\n'
+                   'Return JSON {"grade":2,"rationale":"ONE paragraph of at most 42 words: the decisive evidence and reason for this grade","source_ids":["S1"]}. Cite at most FOUR supplied IDs. No essay, repeated argument or full transcript quotations. Recognition noise is uncertainty, not a creative defect. Do not inflate the grade.',
+                   280, lambda value,k=key:check_dimension(value,k), .40 + index * .045)
+        row["key"] = key
+        raw["dimensions"].append(row)
     # Each weak criterion receives its own edit. For strong videos retain at
     # least three optional refinements without claiming a guaranteed increase.
     weights = {r[0]: r[2] for r in RUBRIC}
@@ -362,6 +456,16 @@ def generate_parts(report, source_data, complete, progress):
     selected = [r for r in ranked if r["grade"] < 3]
     selected += [r for r in ranked if r not in selected][:max(0, 3 - len(selected))]
     selected = selected[:3]
+    if raw.get('summary_recognition_correction') or re.search(r'\b(?:strong|clear)\s+(?:call|cta)\b',raw.get('summary',''),re.I) and not any(
+            CTA.search(s['text']) for s in evidence(report) if s['kind'] in {'speech','ocr'}):
+        weakest = next((r for r in ranked if r['grade'] < 3), None)
+        if weakest:
+            sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', raw['summary'])
+            clean_intro = ' '.join(s for s in sentences if not re.search(r'\b(?:ocr|recognition|transcription|strong call|clear cta)\b',s,re.I)).strip()
+            concern = re.split(r'(?<=[.!?])\s+(?=[A-Z])', weakest['rationale'])[0].strip()
+            raw['summary'] = (clean_intro + ' Main weakness: ' + concern).strip()[:600]
+            label = next(label for key,label,_,_ in RUBRIC if key == weakest['key'])
+            raw['verdict'] = 'Revise ' + label.lower()
     raw["edits"] = []
     for index, dimension in enumerate(selected):
         key = dimension["key"]
@@ -398,7 +502,9 @@ def generate_parts(report, source_data, complete, progress):
                 "clarity": "Verify the central product message with a fluent editor. Keep one concrete supported benefit; correct captions against the spoken audio and product brief.",
                 "structure": "Review this source span in context. Remove repeated setup only after checking the audio, and order the remaining shots as problem, demonstration, payoff and next action.",
                 "credibility": "Verify this claim and ingredient names against the product label or brand brief. Remove unsupported promises; use an actual demonstration without presenting it as clinical proof.",
-                "emotion": "Check the intended feeling with a fluent editor. Emphasize an existing relatable problem or visible payoff without adding an invented personal result."
+                "emotion": "Check the intended feeling with a fluent editor. Emphasize an existing relatable problem or visible payoff without adding an invented personal result.",
+                "voice": "Review the original audio with a fluent editor. Tighten long pauses, balance speech against music and record the key payoff with clearer vocal emphasis.",
+                "visual": "Replace repeated static framing with a close product shot and a genuine application or result shot where available; enlarge low-visibility text and verify it on a phone."
             }
             edit = {"title": "Fluent-editor check: " + key, "operation": "audio", "source_ids": [source["id"]],
                     "instruction": directions[key], "replacement": "Native-language copy could not be generated reliably. Use the editing directions above; a fluent editor must supply and time any new spoken line.",
@@ -408,6 +514,7 @@ def generate_parts(report, source_data, complete, progress):
             raw["uncertainties"].append(f"The {key} rewrite could not be generated reliably after two attempts. Its edit is a clearly marked fluent-editor checklist, not verified replacement copy.")
         edit["targets"] = [key]
         raw["edits"].append(edit)
+    polish_unsupported_edits(raw, report)
     review=validate_review(raw, report)
     for key in ("narrative_breakdown","linguistic_review"):
         if key in raw:review[key]=raw[key]

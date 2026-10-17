@@ -163,7 +163,7 @@ class WorkerMemoryTests(unittest.TestCase):
 
 class AdaptivePacingTests(unittest.TestCase):
     def test_warm_gpu_cools_with_headroom_before_next_burst(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=76), gpu(temperature=74), gpu(temperature=73)]) as info, \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=75), gpu(temperature=73), gpu(temperature=72)]) as info, \
                 patch.object(pipeline.time, "sleep") as sleep:
             pipeline.stage_pause(Mock(), 0)
         self.assertEqual(info.call_count, 3)
@@ -247,6 +247,14 @@ class AnalysisFallbackTests(unittest.TestCase):
         self.stack.enter_context(patch.object(pipeline, "ocr_analysis", return_value={"sources":[],"available":True}))
         self.stack.enter_context(patch("studio_brief.create_clips"))
         self.stack.enter_context(patch("studio_screenshots.create_screenshots"))
+        self.stack.enter_context(patch("studio_av_signals.voice_from_video", return_value={
+            "available": True, "sources": [{"id": "A1", "start": 0, "end": 1,
+                                             "kind": "audio", "text": "Measured test audio"}],
+            "note": "Fixture audio"}))
+        self.stack.enter_context(patch("studio_av_signals.visual_observations", return_value={
+            "available": True, "sources": [{"id": "V1", "start": 0, "end": 1,
+                                             "kind": "visual", "text": "Measured test frame"}],
+            "note": "Fixture visual"}))
 
     def tearDown(self):
         self.stack.close()
@@ -304,11 +312,12 @@ class AnalysisFallbackTests(unittest.TestCase):
         self.assertEqual(worker.call_count, 1)
         self.render_pdf.assert_not_called()
 
-    def test_trusted_ocr_frames_skip_generic_vision_model(self):
+    def test_trusted_ocr_does_not_hide_visual_footage(self):
         ocr={"available":True,"sources":[{"id":f"O{i+1}","start":i/10,"end":i/10+.1,
              "text":f"label {i}","confidence":.95,"frame_file":"frames/frame_00.jpg"} for i in range(6)]}
         def worker(task, video, output, device, *args):
             if task == "speech": self.write_speech()
+            elif task == "vision": self.write_vision()
             elif task == "review":
                 (output / "review.json").write_text(json.dumps({"available":True,"overall_score":60,
                     "verdict":"Test","summary":"Test review","strengths":[],"edits":[],"score_note":"Test"}))
@@ -316,8 +325,8 @@ class AnalysisFallbackTests(unittest.TestCase):
         with patch.object(pipeline,"ocr_analysis",return_value=ocr), \
                 patch.object(pipeline,"_run_worker",side_effect=worker) as run:
             report=self.analyze()
-        self.assertEqual([call.args[0] for call in run.call_args_list],["speech","review"])
-        self.assertTrue(any("trusted OCR" in warning for warning in report["processing"]["warnings"]))
+        self.assertEqual([call.args[0] for call in run.call_args_list],["speech","vision","review"])
+        self.assertTrue(report["visual"]["available"])
 
     def test_retry_reuses_completed_transcription(self):
         self.write_speech()

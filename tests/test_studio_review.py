@@ -34,8 +34,8 @@ class SemanticReviewTests(unittest.TestCase):
         self.assertNotIn("predicted_score", result)
         self.assertEqual(result["target"]["gap"], 25)
         self.assertTrue(result["target"]["needs_improvement"])
-        self.assertEqual(len(result["target"]["priorities"]), 6)
-        self.assertEqual(result["target"]["priorities"][0]["key"], "hook")
+        self.assertEqual(len(result["target"]["priorities"]), len(RUBRIC))
+        self.assertEqual(result["target"]["priorities"][0]["key"], "visual")
 
     def test_below_70_priorities_only_include_generated_top_edits(self):
         for edit in self.raw["edits"]:
