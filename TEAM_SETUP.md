@@ -24,6 +24,6 @@ Open <http://127.0.0.1:8765>, upload an MP4/MOV or another supported video, and 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\start_studio.ps1 -NoBrowser
 ```
 
-The `.env` file is optional for public model downloads. If your Hugging Face access requires a personal token, copy `.env.example` to `.env`, replace its placeholder with **your own** read token, and keep `.env` local. Never paste a token into an issue or commit. Uploaded videos, reports, model weights, and `.env` are excluded from Git.
+No Hugging Face token is needed for the Studio's public model downloads. If you later use gated or private weights, copy `.env.example` to `.env`, uncomment its `HF_TOKEN` line, enter **your own** read token, and keep `.env` local. Never paste a token into an issue or commit. Uploaded videos, reports, model weights, and `.env` are excluded from Git.
 
 Reports use Edge to render Indian scripts into the PDF. If a machine fails setup, save the terminal output and the relevant `results/studio/<job-id>/worker_*.log` file without sharing customer videos or tokens. The full usage and limitations are in [STUDIO_GUIDE.md](STUDIO_GUIDE.md).
