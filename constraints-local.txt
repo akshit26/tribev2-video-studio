@@ -1,0 +1,4 @@
+# Keep the legacy neuralset extractors on Transformers 4 and Hub 0.x.
+transformers>=4.53,<5
+huggingface_hub<1
+pandas<3

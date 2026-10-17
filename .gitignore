@@ -1,0 +1,54 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+cache/
+*.data
+*.pkl
+
+.ipynb_checkpoints/
+*.mp3
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Training artifacts
+lightning_logs/
+wandb/
+results/
+
+# Local uploads, exports, archives, and scratch repositories
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.avi
+*.mkv
+*.pdf
+*.zip
+# The upstream demo notebook is large and available from its source repository.
+tribe_demo.ipynb
+videoanalyser/
+videotrive/
+tribev2/tribemain/
+tribev2/tribev2/
+
+# Testing / type-checking
+.pytest_cache/
+.mypy_cache/
+
+# OS
+.DS_Store

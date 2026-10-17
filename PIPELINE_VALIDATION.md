@@ -1,0 +1,49 @@
+# Offline creative pipeline validation ? 1 October 2026
+
+Implemented: sequential CUDA faster-whisper large-v3-turbo int8_float16, isolated CPU RapidOCR, sampled-frame descriptions, and a 4-bit local text reviewer. No external inference API. Original speech is transcribed, not translated. CPU preparation and OCR processes exit before the next stage.
+
+## Verified
+
+- 95 Studio unit/regression tests pass, including Unicode burst recovery, typed speech/OCR sources, OCR confidence filtering, known CTA checks and memory stops.
+- Browser brand upload/reference/feedback workflow passes; four-page PDF, no mobile overflow or browser errors.
+- Three-page standalone PDF layout checked visually, with six embedded screenshots and zero links in the OCR validation fixture. Five recent completed reports were re-exported compactly; previous PDFs remain as `report.before-concise.pdf`.
+- UI OCR evidence and JSON-download control checked on mobile; speech correction fields exclude OCR.
+- Original Video-56900.mp4 ASR retest completed in 19.56 seconds, sampled whole-GPU peak 1,320 MiB, peak temperature 77 C. It now recognizes ?salon bhaiya? and ?pehsa vasool?; the latter remains a phonetic spelling requiring review. Word timestamps produce 18 shorter spans. This is an observation on one video, not an ASR accuracy benchmark.
+- Actual OCR recovered the dry-ends callout, product labels and COMMENT DUO FOR LINK. Low-confidence reversed/small packaging text remains in the raw archive and is excluded from rating evidence. The initial validation sampled 105 frames; subsequent code bounds extra motion probes and deduplicates nearby overlays.
+- Frame descriptions completed on GPU with a sampled peak of 630 MiB. The expanded reviewer context was exercised at about 3,345?3,377 MiB whole-GPU usage, below the 3,840 MiB watchdog threshold and 6 GiB card capacity.
+
+## Recovery and accuracy checks — 9 October 2026
+
+- 108 Studio regression tests pass. Coverage now includes bounded citation selection, rejection of invented source IDs, preserved grade/edit wording, separate cached prompt attempts across restarts, and removal of recognition complaints from the exported creative summary without changing scores.
+- The reported citation failure belongs to job `5a19afc9bff845108371be6ffbfae378` (WhatsApp Video 2026-09-28 at 12.52.17 PM.mp4). Its zero-filled status manifest was backed up as `job.corrupt-20261009.bin` and restored from saved upload metadata; transcript, OCR and checkpoint JSON remained valid. Status writes now flush before replacement.
+- The first resumed run reached the 82 C stop guard at 3,345 MiB sampled total GPU memory. Review bursts were reduced from 128/32 to 64/16 prompt/output tokens. Pacing now waits at 72 C until 70 C; the 82 C stop remains enabled. This is application pacing, not a guarantee of zero thermal throttling.
+- Recommendation validation rejects unsupported free incentives, edits justified by OCR corruption, and unsupported attribution of overlay claims to physical packaging. Invalid copy is retried; exhausted retries remain explicitly labeled editor checks.
+- Export completed for `5a19afc9bff845108371be6ffbfae378`: all six ratings were recovered from signature- and prompt-matching GPU completions and passed current validation, giving an estimated 57/100. Rewrite generation did not finish reliably; all four rewrite sections are explicitly marked fluent-editor checks, without fabricated replacement scripts or incentives. No new CPU model inference was used for recovery. Original checkpoints and rejected drafts remain available for audit.
+- Verified final PDF: three pages, five embedded images, zero link annotations; three playable clips exported successfully. The PDF endpoint returns HTTP 200/application/pdf. Browser checks passed with no JavaScript errors or mobile overflow; overview/edit pages were visually inspected. This is a usable editorial brief, not a completed set of verified replacement scripts or a validated virality forecast.
+- Short NVENC video exports retain the 76 C preflight threshold (cooling to 74 C if needed) and live 82 C stop, separate from the review model's 72/70 C burst pacing. The 24 relevant pipeline/video tests pass after this adjustment.
+
+## Earlier unfinished job
+
+The final post-fix review/export for job `ab2b072bcf7a4fa789f3f2fe3fba99a2` has not completed. Earlier drafts incorrectly treated OCR noise/CTA formatting as creative weaknesses; stricter evidence filtering and validation now reject these rationales. The latest restart was blocked because Windows had only about 1.5 GiB free RAM. Do not use intermediate `review_part_*.json` files as a final score. Open this saved job in Studio and choose Resume saved analysis after freeing RAM.
+
+There is no matched/native-rated dataset, so native-speaker agreement, multilingual calibration accuracy and virality prediction are unmeasured. The bundled OCR covers Latin/English and Chinese, not all Indic scripts. The app uses sampled memory/temperature guards; zero physical thermal throttling and instantaneous system-wide memory caps cannot be guaranteed. The PDF omits implementation details, but retains concise score uncertainty and verification notes.
+
+## Validation and performance audit — 16 October 2026
+
+- 123 Studio regression tests pass. New coverage includes positive and explicitly non-penalizing recognition-noise clauses, genuine recognition-based deductions, negated CTA criticism, factual CTA correction without changing a grade, invalid or missing brand fields, unsupported scored brand-claim handling, temperature-dependent bursts, fresh driver telemetry, conflicting replacement edits, and reuse of completed transcription after a resource stop.
+- Browser checks pass for the regular and brand workflows: no JavaScript errors or mobile overflow. The regular report has three pages, six embedded screenshots and zero PDF links. The optional brand workflow saves guidelines, a product brief, a reference video and feedback, and produces a four-page PDF.
+- Job `4f8e84543a6b4254bed31eda30236e40` completed at 65/100 after the former Emotional relevance failure. Its PDF has three pages, six screenshots and no links. No two `replace` edits target the same evidence span.
+- Job `32af644cc1c943f497074038ee2bdfd4` completed at 69/100 after RAM-interruption recovery. Its PDF has three pages, six screenshots and no links. The completed run sampled 3,522 MiB total GPU use and 81 C peak temperature. The conservative 74/71 C test policy made review take 783 seconds, of which 611 seconds were cooling and 159 seconds were inference; it was therefore rejected as too slow.
+- The selected policy uses direct driver telemetry, a 4,096 MiB total-GPU target, a 3,840 MiB live stop, 74/72 C cooling, temperature-dependent 96/32, 48/16 and 24/8 prompt/output bursts, and the unchanged 82 C hard stop. An earlier completed 37-second-video run measured about 138 seconds of preparation, 322 seconds of review and roughly 15 seconds of export (about 7.9 minutes total), with 3,522 MiB peak GPU use and 81 C peak temperature. A later brand-check retry exposed a warm-prefill spike at the less restrictive 75/72 C policy, so warm prompt bursts were reduced in the selected policy. Runtime is not guaranteed: model retries, a hot room/GPU, long videos and competing applications can exceed ten minutes.
+- Completed video measurements, transcription, OCR and frame descriptions are now restored independently on retry when their output exists. Startup requires 1.5 GiB available RAM and running workers retain a 768 MiB reserve; CPU model fallback remains disabled.
+- The previously failing real brand job `386edd64e3ee45069fd17c9930c234c8` now completes at 60/100 with 20 brief checks. Eight unsupported checks are withheld as `unknown`; no scored check lacks video evidence. Its four-page PDF contains six embedded screenshots and zero links, returns HTTP 200, and passes desktop/mobile browser checks.
+
+## Throughput optimization — 16 October 2026
+
+- The reported slow case was job `0344e34c3ac9458da568c5624036bfff`, a 33.8-second 1080x1920, 53.44 fps video with a 2,696-character product brief. Its visible wall interval was 40:28 and included resumed/cached work. It generated six separate ratings, six edits with retries, and five brand-section calls.
+- Clean benchmark `9bf9bc0fcf5742e29860b790e0442ed5` reduced the same workload to 13:31 by batching all six ratings, limiting the report to three priority edits, and assessing the normal-sized brief in one request. It produced a valid four-page PDF with three edits and six brand checks.
+- Cold-cache benchmark `e0c46d4dc4174dd6884f0ba31dd2a728` took 14:00. Windows spent 137 seconds loading the 1.5 GiB speech model from disk; this was model loading with an idle GPU, not transcription inference. The completed report passes browser/PDF checks: four pages, five embedded screenshots, zero links, no browser errors or mobile overflow.
+- The final policy further limits the one-view brand output to five priority checks and skips generic frame captions when at least six trusted OCR sources exist. Video inspection uses a correct sequential decoder for high-frame-rate phone footage, audio is decoded once, OCR samples 0.8 fps plus scene probes, and CPU stages use four threads.
+- 124 Studio regression tests pass after these changes. The 4,096 MiB target, 3,840 MiB watchdog and 82 C hard stop remain unchanged. Warm-cache short-form jobs are expected near 7–9 minutes; cold model loading, heavy competing applications, retries or unusually dense evidence can still exceed ten minutes.
+
+These tests establish schema, grounding, recovery, resource and presentation behavior. They do not establish virality prediction accuracy or 80–90% native-speaker agreement; those claims still require the labeled per-language holdout data that was not supplied.
