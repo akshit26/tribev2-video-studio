@@ -19,12 +19,12 @@ LANGUAGES = {"auto": "Auto detect / mixed speech", "hi": "Hindi", "ta": "Tamil",
              "pa": "Punjabi", "ur": "Urdu", "as": "Assamese", "ne": "Nepali", "sa": "Sanskrit",
              "sd": "Sindhi", "en": "English"}
 RUBRIC = [
-    ("hook", "Opening hook", 15, "A specific reason to keep watching within the first 3-5 seconds, supported by the opening speech or screen. A stated problem alone is functional; grade 3 requires a striking execution or immediate payoff."),
-    ("clarity", "Script and payoff", 15, "The actual spoken script has a focused audience problem, concrete product role and payoff. Penalize filler, vague promises and repetitive ingredient lists; do not penalize normal regional phrasing."),
+    ("hook", "Opening hook", 15, "A specific reason to keep watching within the first 3-5 seconds, supported by the opening speech or screen. Judge the attention trigger and whether its promised payoff arrives. A stated problem alone is functional; grade 3 requires a striking execution or immediate payoff."),
+    ("clarity", "Script and payoff", 15, "The actual spoken script has a focused audience problem, concrete product role and payoff. Judge comprehension load: can a viewer follow the main idea once without rereading? Penalize filler, vague promises and repetitive ingredient lists; do not penalize normal regional phrasing."),
     ("structure", "Story and pacing", 10, "The spoken and visual sequence progresses efficiently toward a payoff. A continuous monologue or long static stretch needs a reason to justify its length; no universal English words/min threshold."),
-    ("credibility", "Evidence and credibility", 10, "Specific, supported claims. Distinguish a visible demonstration, testimonial and actual proof; packaging claims alone do not prove efficacy."),
-    ("emotion", "Emotional relevance", 5, "Show or express a meaningful audience stake or satisfying payoff. A relatable topic alone is not a compelling emotional execution; do not claim measured viewer feelings."),
-    ("cta", "Call to action", 10, "One feasible viewer action, with clear destination or response. A slogan such as 'resolve it' is not an actionable CTA. 'Comment LINK for a DM' is actionable without a URL."),
+    ("credibility", "Evidence and credibility", 10, "Specific, supported claims. Judge the trust gap between the promise and the proof actually shown. Distinguish a visible demonstration, testimonial and actual proof; packaging claims alone do not prove efficacy."),
+    ("emotion", "Emotional relevance", 5, "Show or express a meaningful audience stake or satisfying payoff. Judge whether the benefit feels concrete and relevant from the evidence, not whether viewers actually felt an emotion. A relatable topic alone is not compelling execution."),
+    ("cta", "Call to action", 10, "One feasible viewer action, with clear destination or response. Judge action friction: what exactly must viewers do, and is it easy to remember? A slogan such as 'resolve it' is not an actionable CTA. 'Comment LINK for a DM' is actionable without a URL."),
     ("voice", "Voice and delivery", 15, "Judge spoken pacing, pauses, intelligibility and measured loudness/pitch variation from A audio sources alongside S speech. Do not infer an emotion or a performance style from text alone; music can distort audio measures. Grade 3 needs convincing delivery evidence."),
     ("visual", "Visual presentation", 20, "Judge the actual sampled frames using V evidence: composition, lighting, visual variety, product visibility and demonstration, and readable overlays using O evidence. Static talking-head footage and repeated framing can limit a long ad even when the script is clear. Do not infer visual appeal from OCR text alone or treat blur/brightness numbers as an aesthetic score."),
 ]
@@ -151,12 +151,14 @@ def validate_review(raw: dict, report: dict) -> dict:
                                "grade": dimension["grade"], "goal_grade": 3,
                                "reason": dimension["rationale"], "edit_numbers": matching})
     from studio_estimate import apply_estimate
+    from studio_viewer_response import viewer_response_map
     result = {"version": "semantic-review-4", "available": True,
             "model": "Qwen3-4B-Instruct-2507 / Q4_K_M", "overall_score": None if quality["withhold_score"] else total,
             "transcript_quality": quality,
             "summary": text(raw.get("summary"), 5000), "verdict": text(raw.get("verdict"), 200),
             "content_language": text(raw.get("content_language"), 100),
-            "dimensions": dimensions, "strengths": strengths, "edits": edits,
+            "dimensions": dimensions, "viewer_response": viewer_response_map(dimensions),
+            "strengths": strengths, "edits": edits,
             "uncertainties": [text(x) for x in raw.get("uncertainties", [])[:6]],
             "sources": list(sources.values()), "anchors": ANCHORS,
             "target": {"score": 75, "status": "Edit goal, not a predicted result",

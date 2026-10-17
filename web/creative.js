@@ -56,6 +56,13 @@ window.renderCreative = function(report,id) {
   if(review.dimensions.some(r=>['whole_transcript_absence_check','supplied_evidence_absence_check'].includes(r.evidence_scope)))scoreSection.append(node('p','For a grade-zero absence assessment, the cited evidence is the search scope, not positive evidence of an absent feature. Recognition errors and unobserved visuals still need verification.','brief-note'));
   const grid=node('div',undefined,'review-score-grid');
   for(const row of review.dimensions){const card=node('article',undefined,'panel review-card');card.append(node('h3',row.label),node('strong',`${row.grade}/4`,'review-grade'),node('p',`${row.points} of ${row.weight} points before adjustment`,'brief-time'),node('p',row.rationale),refs(row.source_ids));const adjusted=estimate?.dimensions.find(d=>d.key===row.key);if(adjusted){card.append(node('p',`Adjusted: ${adjusted.estimated_points} / ${row.weight} points · evidence weight ${Math.round(adjusted.reliability*100)}%`,'brief-note'));if(adjusted.recognition_concern)card.append(node('p','The reviewer identified possible transcription errors in this category; its judgment has reduced weight.','brief-note'));}grid.append(card);}scoreSection.append(grid);
+  if(review.viewer_response?.length){
+    const response=section('Likely viewer-response bottlenecks');
+    response.append(node('p','Editing hypotheses derived from the creative grades. Brain activity and actual audience response were not measured.','brief-note'));
+    const responseGrid=node('div',undefined,'review-score-grid');
+    for(const item of review.viewer_response){const card=node('article',undefined,'panel review-card');card.append(node('h3',item.label),node('strong',item.status,'review-grade'),node('p',`Limited by ${item.bottleneck} (${item.bottleneck_grade}/4). ${item.meaning}`),refs(item.source_ids));responseGrid.append(card);}
+    response.append(responseGrid);
+  }
   const plan=section(`Exact edit plan - target ${review.target.score}/100`);plan.append(node('p',review.target.explanation,'brief-note'));
   if(review.target.needs_improvement){
     plan.append(node('h3','Rubric priorities to work toward 75'));

@@ -136,7 +136,7 @@ class WorkerMemoryTests(unittest.TestCase):
         terminate.assert_called_once_with(process)
 
     def test_warm_gpu_does_not_start_worker(self):
-        with patch.object(pipeline, "gpu_info", return_value=gpu(temperature=78)), \
+        with patch.object(pipeline, "gpu_info", return_value=gpu(temperature=80)), \
                 patch.object(pipeline.subprocess, "Popen") as spawn:
             ok, _, reason = self.worker()
         self.assertFalse(ok)
@@ -163,7 +163,7 @@ class WorkerMemoryTests(unittest.TestCase):
 
 class AdaptivePacingTests(unittest.TestCase):
     def test_warm_gpu_cools_with_headroom_before_next_burst(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=75), gpu(temperature=73), gpu(temperature=72)]) as info, \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=79), gpu(temperature=78), gpu(temperature=77)]) as info, \
                 patch.object(pipeline.time, "sleep") as sleep:
             pipeline.stage_pause(Mock(), 0)
         self.assertEqual(info.call_count, 3)
@@ -176,12 +176,18 @@ class AdaptivePacingTests(unittest.TestCase):
         sleep.assert_not_called()
 
     def test_hot_gpu_waits_before_resuming(self):
-        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=78), gpu(temperature=65)]), \
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", side_effect=[gpu(temperature=80), gpu(temperature=77)]), \
                 patch.object(pipeline.time, "sleep") as sleep:
             progress = Mock()
             pipeline.stage_pause(progress, 50)
         sleep.assert_called()
         self.assertIn("cooling", progress.call_args.args[1])
+
+    def test_warm_but_safe_gpu_keeps_working(self):
+        with patch.object(pipeline, "require_memory"), patch.object(pipeline, "gpu_info", return_value=gpu(temperature=76)), \
+                patch.object(pipeline.time, "sleep") as sleep:
+            pipeline.stage_pause(Mock(), 0)
+        sleep.assert_not_called()
 
 
 class CpuIsolationTests(unittest.TestCase):

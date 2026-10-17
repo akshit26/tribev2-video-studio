@@ -20,7 +20,7 @@ def run_gpu_render(command, log_path, timeout=90):
     from studio_pipeline import gpu_info, stage_pause, _terminate_worker
     # The short NVENC export uses a dedicated video engine, not LLM bursts.
     # Retain its original preflight threshold and the live 82 C stop guard.
-    stage_pause(lambda *_: None, 0, pause_at=76, resume_at=74)
+    stage_pause(lambda *_: None, 0, pause_at=79, resume_at=77)
     require_memory(RESERVE_MB)
     before = gpu_info()
     if before["used_mb"] > GPU_BUDGET_MB - 1536:

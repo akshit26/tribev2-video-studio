@@ -338,8 +338,8 @@ def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: in
     return process.returncode == 0 and not reason, peak, reason
 
 
-def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=75, resume_at=72):
-    """Warm GPUs use smaller inference bursts; retain the separate 82 C stop."""
+def stage_pause(progress, value, label="Releasing GPU memory before the next stage", *, pause_at=79, resume_at=77):
+    """Pause only near the thermal stop; use hysteresis to avoid rapid cycling."""
     cooling = False
     for _ in range(240):
         require_memory(RESERVE_MB)
@@ -523,7 +523,7 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
         "device": "cuda" if devices and all(d == "cuda" for d in devices) else "mixed" if "cuda" in devices else "cpu",
         "gpu_name": system["gpu"]["name"], "budget_mb": budget_mb, "peak_gpu_mb": peak,
         "peak_gpu_scope": "total", "models": models, "warnings": warnings, "brain_inference": False,
-        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts delays to temperature. 4 GB total GPU target with 256 MiB margin; temperature-adaptive bursts; pause at 75 C until 72 C, stop at 82 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
+        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts work size to temperature. 4 GB total GPU target with 256 MiB margin; pause at 79 C until 77 C, stop at 82 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
     }
     progress(58, "Preparing transcript evidence for detailed review")
     report = build_report(info, measurements, transcript, scenes, processing)

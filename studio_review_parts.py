@@ -75,8 +75,9 @@ def polish_unsupported_edits(raw, report):
 def burst_limits(observation):
     temperature = observation.get('temperature_c') if isinstance(observation, dict) else None
     if temperature is None: return 64, 16
-    if temperature < 68: return 96, 32
-    if temperature < 72: return 48, 16
+    if temperature < 70: return 128, 48
+    if temperature < 77: return 96, 32
+    if temperature < 79: return 64, 16
     return 24, 8
 
 
