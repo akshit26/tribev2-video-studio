@@ -8,6 +8,10 @@ window.renderCreative = function(report,id) {
   byId('scoreLabel').textContent=report.review?.estimate?'Estimated creative score':'Creative score';
   byId('scoreRange').textContent=report.review?.estimate?`${report.review.estimate.range[0]}–${report.review.estimate.range[1]} sensitivity range`:'';
   if(report.review?.brand_review){byId('scoreLabel').textContent='Brand-aligned overall';byId('scoreRange').textContent=report.review.brand_review.range.join('–')+' sensitivity range';}
+  const viral=report.review?.virality;
+  byId('viralityCard').hidden=!viral;
+  byId('briefOverview').classList.toggle('without-virality',!viral);
+  byId('viralityScore').textContent=viral?.score??'';
   byId('briefVerdict').textContent=data?.verdict||'This older report needs a fresh analysis';
   byId('briefSummary').textContent=data?.summary||'Upload the video again to generate the concise review and playable excerpts.';
   byId('briefScoreNote').textContent=data?.score_note||'';
@@ -36,6 +40,14 @@ window.renderCreative = function(report,id) {
   const sources=new Map(review.sources.map(s=>[s.id,s]));
   const refs=ids=>{const details=node('details',undefined,'review-evidence');details.append(node('summary','Speech / screen-text evidence'));for(const id of ids||[]){const s=sources.get(id);if(s)details.append(node('p',`${id} | ${s.start.toFixed(1)} - ${s.end.toFixed(1)}s: ${s.text}`));}return details;};
   const section=title=>{const s=node('section',undefined,'report-section');s.append(node('h2',title));detailed.append(s);return s;};
+  if(viral){
+    const check=section('Virality checker');
+    check.append(node('p',`${viral.score}/100 creative spread index. ${viral.note}`,'brief-note'));
+    const leverGrid=node('div',undefined,'review-score-grid');
+    for(const lever of viral.levers){const card=node('article',undefined,'panel review-card');card.append(node('h3',lever.label),node('strong',`${lever.score}/100`,'review-grade'),node('p',lever.question),node('p',`Main constraint: ${lever.bottleneck}`,'brief-note'),refs(lever.source_ids));leverGrid.append(card);}
+    check.append(leverGrid);
+    for(const priority of viral.priorities){if(!priority.edit)continue;check.append(node('p',`Improve ${priority.lever} at ${priority.edit.start.toFixed(1)}–${priority.edit.end.toFixed(1)}s: ${priority.edit.instruction}`,'brief-note'));}
+  }
   if(report.evaluation){
     const narrative=section('Creative structure');
     for(const [key,value] of Object.entries(report.evaluation.narrative_breakdown||{}))narrative.append(node('h3',key.charAt(0).toUpperCase()+key.slice(1)),node('p',value));
