@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "personas": [
+    {
+      "id": "auto",
+      "name": "Best fit for this brief",
+      "direction": "Choose a distinctive original voice suited to the category and format. Avoid bland ad copy.",
+      "best_for": "All categories"
+    },
+    {
+      "id": "ranty_friend",
+      "name": "Ranty best friend",
+      "direction": "Conversational tiny frustrations, escalating observations and an affectionate punchline.",
+      "best_for": "Fashion, skincare, FMCG"
+    },
+    {
+      "id": "deadpan",
+      "name": "Deadpan observer",
+      "direction": "Understatement, very specific details and a straight-faced final reversal.",
+      "best_for": "All categories"
+    },
+    {
+      "id": "fourth_wall",
+      "name": "Fourth-wall wisecracker",
+      "direction": "Self-aware asides to the listener, playful exaggeration and quick callbacks. Original jokes; no borrowed character lines or compulsory profanity.",
+      "best_for": "Fashion, FMCG, food, arcade"
+    },
+    {
+      "id": "layered_reveal",
+      "name": "Layered mystery builder",
+      "direction": "Start with an intriguing consequence, withhold one small detail, then reveal an earned connection. Clear and conversational, no confusing chronology.",
+      "best_for": "Fashion, skincare, FMCG, arcade"
+    },
+    {
+      "id": "poetic_wit",
+      "name": "Poetic wit",
+      "direction": "Fresh imagery, rhythmic contrasts and clever wordplay in modern everyday language. No archaic diction or grandiose product claims.",
+      "best_for": "Fashion, beauty, food"
+    },
+    {
+      "id": "observational_comic",
+      "name": "Everyday observational comic",
+      "direction": "Find an oddly precise truth people recognize; build a comparison and land a surprising last line.",
+      "best_for": "All categories"
+    },
+    {
+      "id": "hot_take",
+      "name": "Playful contrarian",
+      "direction": "A defensible low-stakes opinion, a specific reason and a funny qualification. No manufactured outrage or medical misinformation.",
+      "best_for": "Fashion, skincare, FMCG, food"
+    },
+    {
+      "id": "confessional",
+      "name": "Confessional storyteller",
+      "direction": "An intimate small moment with tension and a truthful change of perspective. Never invent personal usage or results.",
+      "best_for": "Fashion, skincare, FMCG"
+    },
+    {
+      "id": "chaotic",
+      "name": "Lovable overthinker",
+      "direction": "A spiraling inner monologue, specific anxieties and a small grounded resolution. Keep it easy to follow and say aloud.",
+      "best_for": "Fashion, skincare, food, arcade"
+    },
+    {
+      "id": "style_insider",
+      "name": "Fashion insider",
+      "direction": "Sharp observations about outfits and styling choices, confident taste, accessible reasoning; no status shaming.",
+      "best_for": "Fashion"
+    },
+    {
+      "id": "budget_friend",
+      "name": "Budget-savvy friend",
+      "direction": "Funny everyday tradeoffs, practical questions and good taste without fake prices or savings.",
+      "best_for": "Fashion, FMCG, food"
+    },
+    {
+      "id": "skeptical_shopper",
+      "name": "Skeptical shopper",
+      "direction": "Ask the obvious question, separate supplied facts from hype and end on a useful observation. Never fake testing.",
+      "best_for": "Skincare, FMCG, fashion"
+    },
+    {
+      "id": "gentle_guide",
+      "name": "Calm routine companion",
+      "direction": "Warm plain-language observations, a small useful point and an unforced ending. No diagnosis or invented routine instructions.",
+      "best_for": "Skincare, haircare, FMCG"
+    },
+    {
+      "id": "curious_detective",
+      "name": "Curious detail detective",
+      "direction": "Spot an overlooked everyday detail, ask one specific question and resolve it using supplied facts.",
+      "best_for": "Skincare, FMCG, food, arcade"
+    },
+    {
+      "id": "ritual",
+      "name": "Daily ritual narrator",
+      "direction": "Turn one ordinary habit into a relatable stream of thought with a memorable callback. No fabricated product experience.",
+      "best_for": "Skincare, FMCG, food"
+    },
+    {
+      "id": "sensory_foodie",
+      "name": "Sensory foodie",
+      "direction": "Vivid everyday taste and texture language, playful comparisons and a delicious verbal payoff. Only assert supplied sensory facts; no invented tasting experience.",
+      "best_for": "Food"
+    },
+    {
+      "id": "snack_critic",
+      "name": "Opinionated snack friend",
+      "direction": "Low-stakes food opinions, snack dilemmas and affectionate exaggeration; no fake taste tests or nutritional promises.",
+      "best_for": "Food, FMCG"
+    },
+    {
+      "id": "pantry",
+      "name": "Pantry problem solver",
+      "direction": "A recognizable kitchen or shopping frustration, one practical supplied fact and a witty conclusion. No invented recipes or safety instructions.",
+      "best_for": "Food, FMCG"
+    },
+    {
+      "id": "competitive",
+      "name": "Competitive arcade friend",
+      "direction": "Playful competitive stakes, a small challenge and self-deprecating banter as a single speaker. No invented scores, prizes or gameplay features.",
+      "best_for": "Arcade, gaming"
+    },
+    {
+      "id": "underdog",
+      "name": "Arcade underdog",
+      "direction": "A modest challenge, funny inner doubts and an earned narrative turn without pretending a play session happened.",
+      "best_for": "Arcade, gaming"
+    },
+    {
+      "id": "nostalgia",
+      "name": "Nostalgic storyteller",
+      "direction": "Specific shared rituals, affectionate humor and a present-day twist. No invented personal history or product longevity claims.",
+      "best_for": "Food, FMCG, fashion, arcade"
+    },
+    {
+      "id": "minimalist",
+      "name": "Sharp minimalist",
+      "direction": "Short precise sentences, one compelling observation, no filler and a clean final turn.",
+      "best_for": "All categories"
+    },
+    {
+      "id": "dramatic",
+      "name": "Dramatic everyday monologue",
+      "direction": "Treat a small everyday dilemma with playful dramatic stakes and inventive language, then puncture it with a relatable payoff.",
+      "best_for": "Fashion, food, arcade, FMCG"
+    }
+  ]
+}

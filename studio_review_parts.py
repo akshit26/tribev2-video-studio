@@ -80,6 +80,18 @@ def burst_limits(observation):
     return 24, 8
 
 
+def writer_burst_limits(observation):
+    """Larger HTTP work units; the model batch size and thermal guards stay fixed."""
+    temperature = observation.get('temperature_c') if isinstance(observation, dict) else None
+    if temperature is None:
+        return 64, 16
+    if temperature < 68:
+        return 192, 48
+    if temperature < 72:
+        return 128, 32
+    return 64, 16
+
+
 def check_edit_grounding(row, report):
     if recognition_penalty(row['why']+' '+row['instruction']):
         raise ValueError('Do not prescribe creative edits to fix OCR recognition errors. Address a weakness established by reliable speech or screen evidence; put extraction uncertainty in verification notes.')
@@ -122,6 +134,12 @@ def reconcile_summary_cta(result, known_ctas):
 from studio_review import ANCHORS, RUBRIC, evidence, validate_review, normalize_operation, transcript_quality, normalize_absence_evidence
 
 
+def cool_writer_burst_limits(observation):
+    """New hybrid writer: more headroom for short temperature spikes."""
+    temperature=observation.get('temperature_c',82)
+    return (64,16) if temperature < 65 else (32,8)
+
+
 def decoded_json(content):
     cleaned=content.strip()
     for marker in ('<|im_end|>','<|endoftext|>','</s>'):
@@ -142,7 +160,13 @@ def generate_bursts(request, messages, token_budget, pause, label, context_token
     Reuse only the current GPU slot, not the disabled host-memory prompt cache.
     Token IDs preserve multilingual byte sequences across continuation calls.
     """
+    limits = (cool_writer_burst_limits if cache_state is not None and cache_state.get('cool_writer') else
+              writer_burst_limits if cache_state is not None and cache_state.get('profile') == 'writer' else burst_limits)
     def completion(body):
+        if cache_state is not None and cache_state.get('cool_writer'):
+            time.sleep(.35)
+            stats=cache_state.setdefault('timing',{})
+            stats['writer_pacing_seconds']=stats.get('writer_pacing_seconds',0)+.35
         begun = time.monotonic()
         try:
             return request('/completion',body,timeout=120)
@@ -171,7 +195,7 @@ def generate_bursts(request, messages, token_budget, pause, label, context_token
     end = common
     while end < len(warm_tokens):
         observation = pause(f"{label}: reading evidence ({round(100 * end / len(warm_tokens))}%)")
-        prefill, _ = burst_limits(observation)
+        prefill, _ = limits(observation)
         end = min(end + prefill, len(warm_tokens))
         result = completion({"prompt": warm_tokens[:end], "n_predict": 0,
                          "cache_prompt": True, "id_slot": 0})
@@ -180,11 +204,13 @@ def generate_bursts(request, messages, token_budget, pause, label, context_token
     content = ""
     while len(generated) < token_budget:
         observation = pause(f"{label}: drafting in short bursts")
-        _, output_burst = burst_limits(observation)
+        _, output_burst = limits(observation)
+        sampling = cache_state.get('sampling', {}) if cache_state is not None else {}
         result = completion({"prompt": prompt_tokens + generated,
-                         "n_predict": min(output_burst, token_budget - len(generated)), "temperature": 0,
+                         "n_predict": min(output_burst, token_budget - len(generated)), "temperature": sampling.get('temperature', 0),
+                         "top_p": sampling.get('top_p', .95),
                          "repeat_penalty": 1.12, "repeat_last_n": 256,
-                         "seed": 42, "cache_prompt": True, "id_slot": 0, "return_tokens": True})
+                         "seed": sampling.get('seed', 42), "cache_prompt": True, "id_slot": 0, "return_tokens": True})
         if result.get("truncated"):
             raise ValueError("GPU output context was truncated")
         generated.extend(result.get("tokens", []))

@@ -228,10 +228,10 @@ def review_prompt(report: dict, source_data) -> str:
 REVIEW_CONTEXT = 6144
 
 
-def review_command(binary, port):
+def review_command(binary, port, model=None):
     # Smaller context/batches, plain f16 cache, no flash attention, no host
     # prompt cache. Explicit full offload prevents an automatic CPU split.
-    return [str(binary), "-m", str(MODEL), "--host", "127.0.0.1", "--port", str(port),
+    return [str(binary), "-m", str(model or MODEL), "--host", "127.0.0.1", "--port", str(port),
             "--load-mode", "none", "--no-host",
             "-c", str(REVIEW_CONTEXT), "-ngl", "all", "--fit", "off",
             "-b", "32", "-ub", "16", "-ctk", "f16", "-ctv", "f16", "-fa", "off",
@@ -246,11 +246,17 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
         raise ValueError("Detailed review is GPU-only; CPU fallback is disabled.")
     report = ({"transcript": {"segments": [{"start": 0, "end": 1, "text": "GPU check"}]}}
               if probe else json.loads((output / "review_input.json").read_text(encoding="utf-8")))
+    script_mode = "script_request" in report
+    model = MODEL
+    if script_mode:
+        from studio_script_writer import SYSTEM as script_system
+        from studio_script_local import resolve_local_model
+        _, _, model = resolve_local_model(report["script_request"]["brief"])
     sources = evidence(report)
-    if not sources:
+    if not sources and not script_mode:
         raise ValueError("Semantic review requires a usable transcript")
     binary = next((ROOT / "cache/llama").rglob("llama-server.exe"), None)
-    if not binary or not MODEL.exists():
+    if not binary or not model.exists():
         raise RuntimeError("Run prepare_review.py to install the local review model")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -259,7 +265,9 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
     env = os.environ.copy()
     env["PATH"] = str(ROOT / ".venv/Lib/site-packages/torch/lib") + os.pathsep + env.get("PATH", "")
     env["LLAMA_API_KEY"] = api_key
-    command = review_command(binary, port)
+    command = review_command(binary, port, model)
+    if script_mode and model.name.startswith("Qwen3.5"):
+        command += ["--reasoning", "off", "--reasoning-budget", "0", "--chat-template-kwargs", json.dumps({"enable_thinking":False})]
 
     def request(route, body=None, timeout=120):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
@@ -280,16 +288,26 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
     part_number = max((int(p.stem.rsplit("_", 1)[-1]) for p in output.glob("review_part_*.json") if p.stem.rsplit("_", 1)[-1].isdigit()), default=0)
     checkpoint_path = output / "review_checkpoint.json"
     signature = review_signature(output) if not probe else "probe"
+    if script_mode:
+        from studio_script_writer import library, WRITER_VERSION
+        signature = hashlib.sha256((signature + model.name + script_system + WRITER_VERSION + json.dumps(library(), sort_keys=True)).encode("utf-8")).hexdigest()
     try:
         checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, KeyError):
         checkpoint = {}
     from studio_review_cache import CompletionCache
     completion_cache = CompletionCache(checkpoint, signature)
-    gpu_cache = {}
+    gpu_cache = {"profile": "writer", "cool_writer": model.name.startswith("Qwen3.5")} if script_mode else {}
     profile_started = time.monotonic()
     def complete(prompt, tokens, label):
         nonlocal part_number
+        if script_mode:
+            seed = report["script_request"]["brief"].get("generation_seed", 42)
+            creative = label.startswith("Hook options") or label.startswith("Draft")
+            freedom = report["script_request"]["brief"].get("creative_freedom", "wild")
+            hook_temperature = {"wild": .95, "balanced": .8, "restrained": .65}.get(freedom, .95)
+            gpu_cache["sampling"] = {"temperature": hook_temperature if label.startswith("Hook options") else .65 if creative else 0,
+                                     "top_p": .92, "seed": seed}
         prompt_hash = hashlib.sha256((prompt + str(tokens)).encode("utf-8")).hexdigest()
         cached = completion_cache.get(label, prompt_hash)
         if cached:
@@ -298,7 +316,7 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
             return copy.deepcopy(cached["result"])
         def pause(unit):
             begun = time.monotonic()
-            observation = stage_pause(progress, current_fraction, unit)
+            observation = stage_pause(progress, current_fraction, unit, pause_at=73, resume_at=70) if gpu_cache.get("cool_writer") else stage_pause(progress, current_fraction, unit)
             stats = gpu_cache.setdefault('timing',{})
             stats['monitor_and_cooling_seconds'] = stats.get('monitor_and_cooling_seconds',0)+time.monotonic()-begun
             progress(current_fraction, unit)
@@ -311,15 +329,29 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
         gpu_cache['resume_tokens']=(resumed if partial.get('signature')==signature and
             partial.get('prompt_hash')==prompt_hash and isinstance(resumed,list) and
             len(resumed)<=tokens and all(type(t) is int and t>=0 for t in resumed) else [])
-        gpu_cache['save_partial']=lambda generated:_write_json(partial_path,{
-            'signature':signature,'prompt_hash':prompt_hash,'label':label,'tokens':generated})
+        def save_partial(generated):
+            _write_json(partial_path,{'signature':signature,'prompt_hash':prompt_hash,'label':label,'tokens':generated})
+            if script_mode and label.startswith('Draft') and 'paragraph' not in label:
+                from studio_script_writer import spoken_preview
+                paragraphs=spoken_preview(gpu_cache.get('last_output',''))
+                if paragraphs:
+                    _write_json(output/'script_live.json',{'paragraphs':paragraphs,'stage':label,'validated':False,'reviewed':False})
+        gpu_cache['save_partial']=save_partial
         try:
+            active_system = script_system if script_mode else SYSTEM
+            if script_mode and label.startswith("Hook critique"):
+                active_system += ("\nYou are reviewing staged entertainment, not a scientific paper. Never reject a fictional premise "
+                    "because it is fictional, lacks clinical evidence or is not real microbiology. A talking flake, courtroom "
+                    "or job interview is allowed. Flag only actual unsupported product assertions, misleading proof, weak "
+                    "payoff or repeated ideas. Preserve the joke when suggesting a correction.")
             part = generate_bursts(request,
-                                  [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
+                                  [{"role": "system", "content": active_system}, {"role": "user", "content": prompt}],
                                   tokens, pause, label, REVIEW_CONTEXT, gpu_cache)
-        except ValueError:
+        except ValueError as exc:
             partial_path.unlink(missing_ok=True)
             (output / "review_invalid_output.txt").write_text(gpu_cache.get("last_output", ""), encoding="utf-8")
+            if script_mode and "exceeds the small GPU context" in str(exc):
+                raise ValueError("Script context is too long for the local model. Shorten the brief, brand excerpts or experiment notes and try again.") from None
             raise
         part_number += 1
         completion_cache.remember(label, prompt_hash, part)
@@ -342,6 +374,10 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
                     time.sleep(1)
             else:
                 raise TimeoutError("Local review model did not become ready")
+            if script_mode:
+                from studio_script_writer import run_writer
+                run_writer(output, complete, progress)
+                return
             if probe:
                 expected = {"ok": True, "hi": "हिंदी", "ta": "தமிழ்", "te": "తెలుగు"}
                 result = complete('Return exactly this JSON, with no additional text: ' + json.dumps(expected, ensure_ascii=False), 128, "Multilingual GPU runtime check")
@@ -387,4 +423,4 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
             if process.poll() is None:
                 _terminate_worker(process)
             timing = gpu_cache.get('timing',{})
-            _write_json(output/'review_profile.json', dict(timing, elapsed_seconds=round(time.monotonic()-profile_started,2)))
+            _write_json(output/'review_profile.json', dict(timing, model=model.name, elapsed_seconds=round(time.monotonic()-profile_started,2)))

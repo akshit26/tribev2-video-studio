@@ -409,6 +409,8 @@ def get_file(job_id: str, filename: str):
 import sys
 from studio_brand_routes import install as install_brand_routes
 install_brand_routes(sys.modules[__name__])
+from studio_script_routes import install as install_script_routes
+install_script_routes(sys.modules[__name__])
 
 if __name__ == "__main__":
     import uvicorn

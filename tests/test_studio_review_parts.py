@@ -8,6 +8,35 @@ from studio_review_parts import evidence_chunks, generate_parts, generate_bursts
 
 
 class ReviewPartsTests(unittest.TestCase):
+    def test_writer_sampling_reaches_runtime_without_affecting_default(self):
+        samples=[]
+        def request(route,body,**kwargs):
+            if route=='/apply-template':return {'prompt':'context'}
+            if route=='/tokenize':return {'tokens':[1]}
+            if route=='/detokenize':return {'content':'{"ok":true}'}
+            if body['n_predict']==0:return {}
+            samples.append(body)
+            return {'tokens':[999],'stop_type':'eos'}
+        generate_bursts(request,[],64,lambda _:None,'creative',cache_state={'sampling':{'temperature':.9,'seed':123,'top_p':.92}})
+        self.assertEqual(samples[0]['temperature'],.9)
+        self.assertEqual(samples[0]['seed'],123)
+        generate_bursts(request,[],64,lambda _:None,'review')
+        self.assertEqual(samples[1]['temperature'],0)
+        self.assertEqual(samples[1]['seed'],42)
+    def test_writer_uses_fewer_requests_without_changing_default_review(self):
+        calls=[];pauses=[]
+        def request(route,body,**kwargs):
+            if route=='/apply-template':return {'prompt':'context'}
+            if route=='/tokenize':return {'tokens':list(range(300))}
+            if route=='/detokenize':return {'content':'{"ok":true}'}
+            calls.append(body)
+            return {} if body['n_predict']==0 else {'tokens':[999],'stop_type':'eos'}
+        result=generate_bursts(request,[],100,lambda label:pauses.append(label) or {'temperature_c':65},'writer',cache_state={'profile':'writer'})
+        self.assertEqual(result,{'ok':True})
+        self.assertEqual([len(c['prompt']) for c in calls if c['n_predict']==0],[192,300])
+        self.assertEqual(calls[-1]['n_predict'],48)
+        self.assertEqual(len(pauses),3)
+
     def test_ocr_misread_does_not_become_creative_rationale(self):
         rationale = ("The script repeats ingredients without a clear payoff. "
                      "OCR errors in the product name undermine branding.")
