@@ -132,6 +132,68 @@ def install(server):
     def library():
         return writer.library()
 
+    @app.get("/api/scripts/examples")
+    def examples():
+        from studio_script_examples import catalog, NICHES
+        return dict(catalog(), niches=NICHES)
+
+    def performance_path():
+        return server.RESULTS_DIR / "_scripts" / "performance_data.json"
+
+    @app.get("/api/scripts/performance-data")
+    def performance_status():
+        from studio_script_nvidia import nvidia_token
+        summary={"configured":bool(nvidia_token('KUMO_API_KEY') or nvidia_token()),"rows":0,"cohorts":[]}
+        try:
+            data=json.loads(performance_path().read_text(encoding='utf-8'))
+            from collections import Counter
+            counts=Counter((r['niche'],r['language'],r['platform'],r['duration']) for r in data['rows'])
+            summary.update(account=data['account'],outcome_definition=data['outcome_definition'],rows=len(data['rows']),
+                cohorts=[dict(niche=n,language=l,platform=p,duration=d,rows=c) for (n,l,p,d),c in counts.items()])
+        except FileNotFoundError:
+            pass
+        except (OSError,ValueError,KeyError,TypeError):
+            summary['error']='Saved performance data is unreadable. Reimport the original JSON.'
+        return summary
+
+    @app.get("/api/scripts/performance-template")
+    def performance_template():
+        return {"account":"your-account","outcome_definition":"Define one measurable success rule, for example 3-second retention >= 65% at 24 hours; use the same rule for every row.",
+            "measurement_window_hours":24,"rows":[{"post_id":"replace-with-real-post-id","niche":"skincare","language":"Hinglish",
+            "platform":"Instagram Reels","duration":30,"script_text":"Replace with the original pre-publication script.",
+            "published_at":"2026-01-01T10:00:00Z","observed_at":"2026-01-02T10:00:00Z","label":None}]}
+
+    @app.put("/api/scripts/performance-data")
+    def import_performance(values: Annotated[dict, Body()]):
+        from studio_script_performance import validate_dataset
+        try:
+            data=validate_dataset(values)
+        except (ValueError,TypeError) as exc:
+            raise HTTPException(422,str(exc)) from None
+        from studio_pipeline import _write_json
+        with server._lock:
+            performance_path().parent.mkdir(parents=True,exist_ok=True)
+            _write_json(performance_path(),data)
+        return performance_status()
+
+    @app.post("/api/scripts/{script_id}/predict")
+    def predict_performance(script_id: str, values: Annotated[dict, Body()]):
+        state=read(script_id)
+        if state['status'] not in {'completed','failed'} or 'result' not in state:
+            raise HTTPException(409,'Finish a script draft before estimating performance.')
+        try:
+            from studio_script_performance import validate_dataset, predict
+            data=validate_dataset(json.loads(performance_path().read_text(encoding='utf-8')))
+            script=writer.validate_script(values.get('script'),state['brief'])
+            spoken=' '.join(r['spoken'] for r in script['scenes'])
+            return predict(data,state['brief'],spoken)
+        except FileNotFoundError:
+            raise HTTPException(422,'Import real post outcomes first. Kumo cannot estimate audience performance from an editorial score.') from None
+        except (ValueError,TypeError,KeyError) as exc:
+            raise HTTPException(422,server._safe_error(exc)) from None
+        except (OSError,RuntimeError) as exc:
+            raise HTTPException(502,server._safe_error(exc)) from None
+
     @app.get("/api/scripts/experiments")
     def experiments():
         path = server.RESULTS_DIR / "_scripts" / "experiments.json"

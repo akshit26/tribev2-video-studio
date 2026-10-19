@@ -1,10 +1,12 @@
 """Run against local Studio; API generation is mocked so no GPU work is started."""
 import json
+import os
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT=Path(__file__).resolve().parents[1]
+BASE_URL=os.environ.get('WRITER_TEST_BASE_URL','http://127.0.0.1:8765')
 sys.path.insert(0,str(ROOT))
 from playwright.sync_api import sync_playwright
 from tests.test_studio_script_writer import brief, script, assessment
@@ -27,6 +29,12 @@ def main():
         path=urlsplit(request.url).path
         if path=='/api/scripts/engines':
             route.fulfill(json={'default_backend':'nvidia','nvidia_token_configured':True,'token_configured':False,'local_models':[]});return
+        if path=='/api/scripts/performance-data':
+            if request.method=='PUT':saved['performance']=request.post_data_json
+            route.fulfill(json={'configured':True,'rows':20 if saved.get('performance') else 0,'account':'test-account','outcome_definition':'retention >= 65%'});return
+        if path==f'/api/scripts/{sid}/predict':
+            saved['prediction']=request.post_data_json
+            route.fulfill(json={'probability':.6,'base_rate':.5,'context_rows':20,'outcome_definition':'retention >= 65%','method':'Experimental test response.'});return
         if path in {'/api/scripts/library','/api/scripts/experiments'}:
             route.continue_();return
         if path=='/api/scripts':
@@ -63,7 +71,7 @@ def main():
         page=browser.new_page(viewport={'width':1440,'height':1000})
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.route('**/api/scripts**',handle)
-        page.goto('http://127.0.0.1:8765/writer')
+        page.goto(BASE_URL+'/writer')
         page.locator('#library .card').last.wait_for()
         assert page.locator('#library .card').count()==22
         page.locator('[name=topic]').fill(base['topic'])
@@ -73,6 +81,16 @@ def main():
         assert page.locator('#nvidiaSettings').is_visible()
         assert page.locator('#localSettings').is_hidden()
         assert 'configured on server' in page.locator('#nvidiaTokenStatus').inner_text()
+        page.locator('#creatorReferences .card').last.wait_for()
+        assert page.locator('#creatorReferences .card').count()==2
+        page.locator('#referenceNiche').select_option('arcade')
+        page.locator('#referenceLanguage').select_option('Hindi')
+        assert 'बस' in page.locator('#creatorReferences').inner_text()
+        assert page.locator('[name=niche] option').count()==6
+        assert page.locator('#performanceFile').count()==1
+        page.locator('#performanceFile').set_input_files({'name':'outcomes.json','mimeType':'application/json','buffer':json.dumps({'account':'test-account','rows':[]}).encode()})
+        page.locator('#importPerformance').click()
+        page.wait_for_function("document.getElementById('performanceStatus').textContent.includes('20 real posts')")
         page.locator('[name=writer_backend]').select_option('local')
         assert page.locator('#nvidiaSettings').is_hidden()
         assert not page.locator('#hfCreditsAllowed').is_checked()
@@ -118,13 +136,18 @@ def main():
         assert '100/100' in page.locator('#score').inner_text()
         assert 'words | Estimated' in page.locator('#scriptTiming').inner_text()
         assert 'Requested 15s' in page.locator('#scriptTiming').inner_text()
-        page.context.grant_permissions(['clipboard-read','clipboard-write'],origin='http://127.0.0.1:8765')
+        page.locator('#predictPerformance').click()
+        page.wait_for_function("document.getElementById('performanceResult').textContent.includes('60%')")
+        assert 'Uncalibrated' in page.locator('#performanceResult').inner_text()
+        assert 'script' in saved['prediction']
+        page.context.grant_permissions(['clipboard-read','clipboard-write'],origin=BASE_URL)
         page.locator('#copyScript').click()
         page.wait_for_function("document.getElementById('editStatus').textContent === 'Script copied.'")
         copied=page.evaluate('navigator.clipboard.readText()')
         assert 'SHOT:' not in copied and 'TEXT:' not in copied and 'SAY:' not in copied
         assert copied.replace('\r\n','\n')==script()['title']+'\n\n'+'\n\n'.join(row['spoken'] for row in script()['scenes']),repr(copied)
         page.locator('#sceneEditor textarea').first.fill('A different opening.')
+        assert page.locator('#performanceResult').inner_text()==''
         assert page.locator('#score').is_hidden()
         page.locator('#saveDraft').click()
         page.wait_for_function("document.getElementById('editStatus').textContent.includes('unscored')")

@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const make = (tag, content, cls) => { const e=document.createElement(tag); if(content!==undefined)e.textContent=String(content); if(cls)e.className=cls; return e; };
-let personaCatalog=[],engineConfig=null;
+let personaCatalog=[],engineConfig=null,exampleCatalog=null;
 let active=null, current=null, library=null, editorBase=null, dirty=false, busy=false, pollTimer=null, shownHooks='', shownLive='', pollFailures=0;
 async function api(url, options={}) {
   const response=await fetch(url, {...options, headers:{"Content-Type":"application/json",...(options.headers||{})}});
@@ -10,9 +10,9 @@ async function api(url, options={}) {
   return data;
 }
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
-function lock(value){busy=value;for(const b of document.querySelectorAll('#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
+function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
 function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=Number(b.duration);b.hf_credits_allowed=$('hfCreditsAllowed').checked;return b;}
-function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();}
+function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();}
 function updateContentMode(){
   const hints={organic:'Story, humor or useful discovery first. Product presence stays natural; leave CTA blank for a story ending.',ugc:'Creator voice, phone footage and everyday context. Add real experience above; otherwise the writer uses a first look, observation or staged scene.',paid_ad:'Product-led communication with supported benefits and your chosen CTA.'};
   $('contentModeHint').textContent=hints[$('contentMode').value];
@@ -82,13 +82,16 @@ function renderHooks(hooks,review={}){
 }
 function updateScriptTiming(script){
   const brief=current?.brief||getBrief();
+  $('performanceResult').textContent='';
   const words=script.scenes.reduce((n,row)=>n+row.spoken.trim().split(/\s+/).filter(Boolean).length,0);
-  const english=['english','en'].includes((brief.language||'English').toLowerCase());
+  const language=(brief.language||'English').toLowerCase();
+  const rates={english:[120,160,2],en:[120,160,2],hindi:[108,168,1.8],'hindi (roman)':[108,168,1.8],hinglish:[120,180,2]};
+  const rate=rates[language];
   const seconds=Number(brief.duration);
-  $('scriptTiming').textContent=english?`${words} words | Estimated ${Math.round(words*60/160)}-${Math.round(words*60/120)} seconds at 120-160 words/minute | Requested ${seconds}s. ${words<seconds*2?'Too short: develop the story. ':''}Read aloud to confirm.`:`${words} words | Requested ${seconds}s. Read aloud in the selected language to check timing.`;
+  $('scriptTiming').textContent=rate?`${words} words | Estimated ${Math.round(words*60/rate[1])}-${Math.round(words*60/rate[0])} seconds in ${brief.language} | Requested ${seconds}s. ${words<Math.floor(seconds*rate[2])?'Too short: develop the story. ':''}Approximate; read aloud to confirm.`:`${words} words | Requested ${seconds}s. Read aloud in the selected language to check timing.`;
 }
 function renderScenes(script){
-  editorBase=structuredClone(script);
+  editorBase=structuredClone(script);$('performanceResult').textContent='';
   $('scriptTitle').textContent=script.title;$('sceneEditor').replaceChildren();
   updateScriptTiming(script);const scope=$('revisionScope').value;$('revisionScope').replaceChildren(new Option('Whole script',''));script.scenes.forEach((_,i)=>$('revisionScope').add(new Option('Paragraph '+(i+1),String(i))));$('revisionScope').value=scope;
   script.scenes.forEach((scene,index)=>{
@@ -138,7 +141,7 @@ for(const id of ['textExport','printExport'])$(id).addEventListener('click',e=>{
 $('experimentForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/scripts/experiments',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await loadExperiments();status('Experiment observation saved.');}catch(error){status(error.message,true);}};
 async function init(){
   try{
-    const results=await Promise.allSettled([api('/api/scripts/library'),api('/api/brands'),loadSaved(),loadExperiments(),api('/api/scripts/personas'),api('/api/scripts/engines')]);
+    const results=await Promise.allSettled([api('/api/scripts/library'),api('/api/brands'),loadSaved(),loadExperiments(),api('/api/scripts/personas'),api('/api/scripts/engines'),api('/api/scripts/examples'),loadPerformance()]);
     if(results[0].status==='rejected')throw results[0].reason;
     library=results[0].value;
     for(const c of library.cards){const card=make('article',undefined,'card');card.append(make('span',c.kind,'kicker'),make('h3',c.title),make('p',c.author),make('p',c.principle),make('p','Apply: '+c.application),make('p','Limit: '+c.caution));if(c.url){const a=make('a','Read the source ↗');a.href=c.url;a.target='_blank';a.rel='noopener';card.append(a);}$('library').append(card);}
@@ -146,7 +149,26 @@ async function init(){
     for(const r of results.slice(1))if(r.status==='rejected')status(r.reason.message,true);
     if(results[4].status==='fulfilled'){personaCatalog=results[4].value.personas;updatePersona();}
     if(results[5].status==='fulfilled'){engineConfig=results[5].value;$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
+    if(results[6].status==='fulfilled'){exampleCatalog=results[6].value;renderReferences();}
     active=localStorage.getItem('tribe-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('tribe-writer-active');}}
   }catch(e){status(e.message,true);}
 }
+
+function renderReferences(){
+  if(!exampleCatalog)return;
+  const niche=$('referenceNiche').value,language=$('referenceLanguage').value;
+  $('creatorReferences').replaceChildren();
+  for(const row of exampleCatalog.examples.filter(r=>r.niche===niche)){
+    const card=make('article',undefined,'card');card.append(make('h3',row.pattern),make('p',row.scripts[language]),make('p','Avoid: '+row.avoid,'muted small'));
+    for(const id of row.source_ids){const source=exampleCatalog.sources.find(s=>s.id===id);if(!source)continue;const link=make('a',source.title);link.href=source.url;link.target='_blank';link.rel='noopener';card.append(link,make('p',source.kind+' ? '+source.evidence,'muted small'));}
+    $('creatorReferences').append(card);
+  }
+}
+$('referenceNiche').onchange=renderReferences;$('referenceLanguage').onchange=renderReferences;
+$('nicheSelect').onchange=()=>{if($('nicheSelect').value!=='auto'){$('referenceNiche').value=$('nicheSelect').value;renderReferences();}};
+$('briefForm').elements.namedItem('language').addEventListener('change',e=>{if(['English','Hindi','Hinglish'].includes(e.target.value)){$('referenceLanguage').value=e.target.value;renderReferences();}});
+async function loadPerformance(){const data=await api('/api/scripts/performance-data');$('performanceStatus').textContent=(data.configured?'Kumo key configured. ':'Set KUMO_API_KEY on the server. ')+(data.rows?`${data.rows} real posts imported for ${data.account}. Outcome: ${data.outcome_definition}`:'No real outcomes imported yet.')+(data.error?' '+data.error:'');return data;}
+$('importPerformance').onclick=async()=>{const button=$('importPerformance');try{const file=$('performanceFile').files[0];if(!file)throw new Error('Choose your post-outcomes JSON file first.');if(file.size>4_000_000)throw new Error('Keep the import below 4 MB.');button.disabled=true;await api('/api/scripts/performance-data',{method:'PUT',body:await file.text()});await loadPerformance();}catch(e){$('performanceStatus').textContent=e.message;}finally{button.disabled=false;}};
+$('predictPerformance').onclick=async()=>{if(busy||!editorBase||!current?.result)return;const requestId=active,submitted=JSON.stringify(editedScript());const button=$('predictPerformance');button.disabled=true;$('performanceResult').textContent='Comparing with your real post history?';try{const data=await api('/api/scripts/'+requestId+'/predict',{method:'POST',body:JSON.stringify({script:JSON.parse(submitted)})});if(active!==requestId||JSON.stringify(editedScript())!==submitted){$('performanceResult').textContent='Draft changed while estimating. Run a new estimate for the current words.';return;}$('performanceResult').textContent=`Experimental estimate: ${Math.round(data.probability*100)}% for your defined outcome, ?${data.outcome_definition}?. Historical base rate: ${Math.round(data.base_rate*100)}% across ${data.context_rows} comparable posts. Uncalibrated; not a viral score. `+data.method;}catch(e){$('performanceResult').textContent=e.message;}finally{button.disabled=busy;}};
+
 init();

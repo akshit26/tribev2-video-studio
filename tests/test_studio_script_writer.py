@@ -69,7 +69,7 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(writer.validate_assessment(assessment(4),s,b)['score'],100)
         for row in s['scenes']:row['spoken']='Short line.'
         self.assertLess(writer.validate_assessment(assessment(4),s,b)['score'],80)
-        self.assertFalse(writer.duration_issues(s,dict(b,language='Hindi')))
+        self.assertTrue(writer.duration_issues(s,dict(b,language='Hindi')))
 
     def test_valid_candidate_beats_higher_scored_blocked_candidate(self):
         bad=script('Blocked');bad['missing_proof']=['Unverified result.']
@@ -371,7 +371,7 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(result[0]['spoken'],hook['spoken'])
         self.assertEqual(saved[-1]['review_status'],'needs_review')
         self.assertEqual(len(saved[-1]['issues']),5)
-        self.assertIn('19 English words',saved[-1]['issues'][0]['reason'])
+        self.assertIn('19 words',saved[-1]['issues'][0]['reason'])
 
     def test_failed_hook_rewrite_preserves_previous_set_and_issues(self):
         hook={'angle':'demo','spoken':' '.join(['word']*19),'visual':'Open notebook.','overlay':'One idea','payoff':'Write an idea.'}
@@ -390,7 +390,7 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(writer.hook_usage_issues([hook],brief()),[])
         hook['spoken']+=' word'
         self.assertEqual(len(writer.hook_usage_issues([hook],brief())),1)
-        self.assertEqual(writer.hook_usage_issues([hook],dict(brief(),language='Hindi')),[])
+        self.assertTrue(writer.hook_usage_issues([hook],dict(brief(),language='Hindi')))
 
     def test_hook_repairs_invented_testimonial(self):
         hook={'angle':'demo','spoken':'Open a blank page.','visual':'Open notebook.','overlay':'One idea','payoff':'Write down an idea.'}
@@ -663,6 +663,30 @@ class WriterAPITests(unittest.TestCase):
             self.assertEqual(state['status'],'completed')
             self.assertNotIn('nvapi-TESTSECRET',json.dumps(state))
             self.assertIsNone(server._active_job)
+
+    def test_example_and_performance_routes_require_real_data_and_preserve_scores(self):
+        from tests.test_studio_script_performance import dataset
+        examples=self.client.get('/api/scripts/examples').json()
+        self.assertEqual(len(examples['examples']),10)
+        self.assertEqual(self.client.get('/api/scripts/performance-data').json()['rows'],0)
+        template=self.client.get('/api/scripts/performance-template').json()
+        self.assertEqual(self.client.put('/api/scripts/performance-data',json=template).status_code,422)
+        imported=self.client.put('/api/scripts/performance-data',json=dataset())
+        self.assertEqual(imported.status_code,200,imported.text)
+        self.assertEqual(imported.json()['rows'],20)
+        self.assertNotIn('script_text',imported.text)
+        sid='c'*32;path=Path(self.temp.name)/'_scripts'/sid;path.mkdir(parents=True)
+        b=dict(brief(),language='Hinglish',niche='skincare')
+        (path/'state.json').write_text(json.dumps({'id':sid,'status':'completed','brief':b,'stage':'Done'}))
+        result={'best':{'script':script(),'assessment':writer.validate_assessment(assessment(4),script())},'history':[], 'stop_reason':'target_reached'}
+        (path/'script_result.json').write_text(json.dumps(result))
+        before=(path/'script_result.json').read_bytes()
+        with patch('studio_script_performance.predict',return_value={'probability':.6,'calibrated':False}) as predict:
+            response=self.client.post('/api/scripts/'+sid+'/predict',json={'script':script()})
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertFalse(response.json()['calibrated'])
+            self.assertEqual(predict.call_args.args[1]['language'],'Hinglish')
+        self.assertEqual((path/'script_result.json').read_bytes(),before)
 
     def test_worker_completion_and_guard_failure_release_slot(self):
         for success in (True,False):

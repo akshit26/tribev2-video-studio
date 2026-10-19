@@ -105,11 +105,12 @@ def run_hf_writer(output, request, progress, provider=None):
     from studio_pipeline import _write_json
     from studio_review_cache import CompletionCache
     from studio_script_writer import SYSTEM, WRITER_VERSION, library, run_writer
+    from studio_script_examples import catalog
     brief = request["brief"]
     validate_configuration(brief)
     backend = "nvidia" if provider else "huggingface"
     model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
-    signature = hashlib.sha256(json.dumps(["hosted-writer-v2", backend, model, SYSTEM, WRITER_VERSION, library()], sort_keys=True).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps(["hosted-writer-v3", backend, model, getattr(provider, "PROFILE", None), SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
     prefix = "nvidia" if provider else "hf"
     path = output / (prefix + "_writer_checkpoint.json")
     try:
@@ -150,6 +151,23 @@ def run_hf_writer(output, request, progress, provider=None):
                     _write_json(output / "script_live.json", {"paragraphs": paragraphs, "validated": False, "reviewed": False})
                     last_preview = time.monotonic()
             result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
+            if label.startswith('Draft') and 'repair' not in label:
+                progress(1 + 98*fraction, "Making the speech sound natural")
+                try:
+                    if stats['calls_this_run'] >= MAX_CALLS:
+                        raise HostedWriterError('Hosted request limit reached before the voice edit.')
+                    # A voice edit is one bounded extra call; never an automatic retry.
+                    stats['calls_this_run'] += 1
+                    result, edit_usage = provider.voice_edit(token, result, request)
+                    if edit_usage is None:
+                        stats['calls_this_run'] -= 1
+                    if edit_usage:
+                        stats['usage'].append(edit_usage)
+                except (ValueError, HostedWriterError):
+                    if isinstance(result,dict) and isinstance(result.get('scenes'),list):
+                        warnings=result.get('missing_proof')
+                        result['missing_proof']=(warnings if isinstance(warnings,list) else [])[:9]+['Natural-voice edit could not complete; review the original draft wording.']
+                    stats.setdefault('warnings',[]).append('Natural-voice edit unavailable; original generated text retained.')
         else:
             result, usage = chat_completion(token, model, SYSTEM, prompt, tokens, temperature)
         stats["usage"].append(usage)

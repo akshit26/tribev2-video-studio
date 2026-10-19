@@ -290,7 +290,8 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
     signature = review_signature(output) if not probe else "probe"
     if script_mode:
         from studio_script_writer import library, WRITER_VERSION
-        signature = hashlib.sha256((signature + model.name + script_system + WRITER_VERSION + json.dumps(library(), sort_keys=True)).encode("utf-8")).hexdigest()
+        from studio_script_examples import catalog
+        signature = hashlib.sha256((signature + model.name + script_system + WRITER_VERSION + json.dumps(library(), sort_keys=True) + json.dumps(catalog(), sort_keys=True)).encode("utf-8")).hexdigest()
     try:
         checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, KeyError):

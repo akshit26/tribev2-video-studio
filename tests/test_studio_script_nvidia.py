@@ -27,6 +27,36 @@ def answer(text='{"ok":true}', reason='stop'):
 
 
 class NvidiaTests(unittest.TestCase):
+    def test_voice_edit_preserves_untargeted_paragraphs_and_metadata(self):
+        from tests.test_studio_script_writer import script, brief
+        import copy
+        original=script();snapshot=copy.deepcopy(original)
+        request={'brief':dict(brief(),language='Hinglish'),'scene_index':1,'revision_notes':'Make only the middle casual'}
+        with patch.object(n,'chat_completion',return_value=({'paragraphs':['Yaar bas ek simple baat hai, mujhe itna sochna hi nahi.']},{})) as send:
+            changed,_=n.voice_edit('nvapi-TEST',original,request)
+        self.assertEqual(original,snapshot)
+        self.assertEqual(changed['scenes'][0],original['scenes'][0])
+        self.assertEqual(changed['scenes'][2],original['scenes'][2])
+        self.assertNotEqual(changed['scenes'][1]['spoken'],original['scenes'][1]['spoken'])
+        self.assertEqual(changed['scenes'][1]['start'],original['scenes'][1]['start'])
+        self.assertIn('Make only the middle casual',send.call_args.args[3])
+        self.assertNotIn('inventive',send.call_args.args[2])
+
+    def test_voice_edit_failure_preserves_original_with_review_blocker(self):
+        from tests.test_studio_script_writer import script, brief
+        original=script()
+        def fake_writer(path,complete,progress):
+            returned=complete('prompt',100,'Draft 1')
+            self.assertEqual(returned['scenes'],original['scenes'])
+            self.assertTrue(any('voice' in note for note in returned['missing_proof']))
+        with tempfile.TemporaryDirectory() as directory:
+            request={'brief':dict(brief(),writer_backend='nvidia'),'mode':'script'}
+            with patch.object(n,'nvidia_token',return_value='nvapi-TEST'),patch.object(n,'chat_completion',return_value=(original,{})),patch.object(n,'voice_edit',side_effect=hf.HostedWriterError('quota')),patch.object(writer,'run_writer',side_effect=fake_writer):
+                n.run_nvidia_writer(Path(directory),request,lambda *a:None)
+            usage=json.loads((Path(directory)/'nvidia_writer_usage.json').read_text())
+            self.assertEqual(usage['calls_this_run'],2)
+            self.assertTrue(usage['warnings'])
+
     def test_credentials_environment_file_and_public_config(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -61,6 +91,7 @@ class NvidiaTests(unittest.TestCase):
         self.assertEqual(body['model'], n.MODEL)
         self.assertTrue(body['stream'])
         self.assertEqual(body['chat_template_kwargs'], {'enable_thinking':True})
+        self.assertEqual(body['reasoning_effort'],'medium')
         self.assertEqual(req.get_header('Authorization'), 'Bearer nvapi-TEST')
         self.assertEqual(result, {'ok':True})
         self.assertEqual(usage, {'total_tokens':42})
