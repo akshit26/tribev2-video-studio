@@ -43,7 +43,7 @@ class HostedWriterTests(unittest.TestCase):
                     self.assertEqual(hf.hf_token(),'hf_TESTENVONLY')
 
     def test_configuration_exposes_only_token_presence(self):
-        with patch.object(hf,'hf_token',return_value='hf_TESTONLY'):
+        with patch.object(hf,'hf_token',return_value='hf_TESTONLY'), patch('studio_script_nvidia.nvidia_token',return_value=''):
             config=hf.configuration()
         self.assertTrue(config['token_configured'])
         self.assertNotIn('hf_TESTONLY',json.dumps(config))

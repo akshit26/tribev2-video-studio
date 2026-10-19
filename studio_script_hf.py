@@ -41,7 +41,10 @@ def hf_token():
 
 def configuration():
     from studio_script_local import local_configuration
-    return {"default_backend": "local", "token_configured": bool(hf_token()),
+    from studio_script_nvidia import nvidia_token, MODEL
+    nvidia_ready = bool(nvidia_token())
+    return {"default_backend": "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
+            "nvidia_token_configured": nvidia_ready, "nvidia_model": MODEL,
             "models": [{"id": key, "name": name} for key, name in MODELS.items()],
             "local_models": local_configuration(),
             "pricing_note": "HF hosted inference uses account credits and is not unlimited free. Local generation stays free. Hosted calls require explicit credit-use opt-in.",
@@ -49,6 +52,9 @@ def configuration():
 
 
 def validate_configuration(brief):
+    if brief.get("writer_backend") == "nvidia":
+        from studio_script_nvidia import validate_configuration as validate_nvidia
+        return validate_nvidia(brief)
     if brief.get("writer_backend", "local") != "huggingface":
         return
     if brief.get("hf_credits_allowed") is not True:
@@ -95,21 +101,23 @@ def chat_completion(token, model, system, prompt, max_tokens, temperature):
         raise ValueError("HF returned no usable script response.") from None
 
 
-def run_hf_writer(output, request, progress):
+def run_hf_writer(output, request, progress, provider=None):
     from studio_pipeline import _write_json
     from studio_review_cache import CompletionCache
     from studio_script_writer import SYSTEM, WRITER_VERSION, library, run_writer
     brief = request["brief"]
     validate_configuration(brief)
-    model, token = brief["hf_model"], hf_token()
-    signature = hashlib.sha256(json.dumps(["hf-writer-v1", model, SYSTEM, WRITER_VERSION, library()], sort_keys=True).encode()).hexdigest()
-    path = output / "hf_writer_checkpoint.json"
+    backend = "nvidia" if provider else "huggingface"
+    model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
+    signature = hashlib.sha256(json.dumps(["hosted-writer-v2", backend, model, SYSTEM, WRITER_VERSION, library()], sort_keys=True).encode()).hexdigest()
+    prefix = "nvidia" if provider else "hf"
+    path = output / (prefix + "_writer_checkpoint.json")
     try:
         checkpoint = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         checkpoint = {}
     cache = CompletionCache(checkpoint, signature)
-    stats = {"backend": "huggingface", "model": model, "calls_this_run": 0, "cache_hits": 0, "usage": []}
+    stats = {"backend": backend, "model": model, "calls_this_run": 0, "cache_hits": 0, "usage": []}
     fraction = 0
 
     def report(value, stage):
@@ -125,18 +133,32 @@ def run_hf_writer(output, request, progress):
             return cached["result"]
         if stats["calls_this_run"] >= MAX_CALLS:
             raise HostedWriterError("Hosted request limit reached for this run. Saved drafts are retained; retry or switch to Local.")
-        progress(1 + 98*fraction, f"{MODELS[model]}: {label}")
+        progress(1 + 98*fraction, f"{provider.NAME if provider else MODELS[model]}: {label}")
         stats["calls_this_run"] += 1
         creative = label.startswith(("Hook options", "Draft")) and "repair" not in label
         temperature = .85 if creative and label.startswith("Hook options") else .7 if creative else 0
-        result, usage = chat_completion(token, model, SYSTEM, prompt, tokens, temperature)
+        if provider:
+            import time
+            last_preview = 0
+            def preview(content):
+                nonlocal last_preview
+                if not label.startswith("Draft") or time.monotonic() - last_preview < .5:
+                    return
+                from studio_script_writer import spoken_preview
+                paragraphs = spoken_preview(content)
+                if paragraphs:
+                    _write_json(output / "script_live.json", {"paragraphs": paragraphs, "validated": False, "reviewed": False})
+                    last_preview = time.monotonic()
+            result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
+        else:
+            result, usage = chat_completion(token, model, SYSTEM, prompt, tokens, temperature)
         stats["usage"].append(usage)
         cache.remember(label, prompt_hash, result)
         _write_json(path, cache.snapshot())
-        _write_json(output / "hf_writer_usage.json", stats)
+        _write_json(output / (prefix + "_writer_usage.json"), stats)
         return result
 
     try:
         run_writer(output, complete, report)
     finally:
-        _write_json(output / "hf_writer_usage.json", stats)
+        _write_json(output / (prefix + "_writer_usage.json"), stats)

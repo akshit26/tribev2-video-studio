@@ -649,6 +649,21 @@ class WriterAPITests(unittest.TestCase):
             data=json.loads((Path(self.temp.name)/'_scripts'/job['id']/'review_input.json').read_text())
             self.assertEqual(data['script_request']['previous_script']['title'],'Notebook')
 
+    def test_nvidia_dispatches_without_local_gpu_and_preserves_revision(self):
+        b=dict(brief(),writer_backend='nvidia')
+        with patch('studio_script_nvidia.nvidia_token',return_value='nvapi-TESTSECRET'), patch.object(server,'require_memory',side_effect=AssertionError('Hosted must skip GPU')), patch.object(server._executor,'submit') as submit:
+            response=self.client.post('/api/scripts',json={'brief':b,'mode':'script','previous_script':script(),'revision_notes':'Make the ending funnier'})
+            self.assertEqual(response.status_code,202,response.text)
+            args=submit.call_args.args
+            with patch('studio_script_nvidia.run_nvidia_writer') as run, patch('studio_pipeline._run_worker',side_effect=AssertionError('No local worker')):
+                args[0](*args[1:])
+                self.assertEqual(run.call_args.args[1]['revision_notes'],'Make the ending funnier')
+                self.assertEqual(run.call_args.args[1]['previous_script']['title'],'Notebook')
+            state=self.client.get('/api/scripts/'+response.json()['id']).json()
+            self.assertEqual(state['status'],'completed')
+            self.assertNotIn('nvapi-TESTSECRET',json.dumps(state))
+            self.assertIsNone(server._active_job)
+
     def test_worker_completion_and_guard_failure_release_slot(self):
         for success in (True,False):
             with patch.object(server._executor,'submit') as submit:

@@ -25,6 +25,8 @@ def main():
     def handle(route):
         request=route.request
         path=urlsplit(request.url).path
+        if path=='/api/scripts/engines':
+            route.fulfill(json={'default_backend':'nvidia','nvidia_token_configured':True,'token_configured':False,'local_models':[]});return
         if path in {'/api/scripts/library','/api/scripts/experiments'}:
             route.continue_();return
         if path=='/api/scripts':
@@ -67,7 +69,12 @@ def main():
         page.locator('[name=topic]').fill(base['topic'])
         page.locator('[name=facts]').fill(base['facts'])
         page.locator('[name=duration]').select_option(str(base['duration']))
-        assert page.locator('[name=writer_backend]').input_value()=='local'
+        assert page.locator('[name=writer_backend]').input_value()=='nvidia'
+        assert page.locator('#nvidiaSettings').is_visible()
+        assert page.locator('#localSettings').is_hidden()
+        assert 'configured on server' in page.locator('#nvidiaTokenStatus').inner_text()
+        page.locator('[name=writer_backend]').select_option('local')
+        assert page.locator('#nvidiaSettings').is_hidden()
         assert not page.locator('#hfCreditsAllowed').is_checked()
         assert page.locator('[name=local_model]').input_value()=='auto'
         assert page.locator('#hostedSettings').is_hidden()

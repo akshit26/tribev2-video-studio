@@ -18,7 +18,7 @@ function updateContentMode(){
   $('contentModeHint').textContent=hints[$('contentMode').value];
 }
 $('contentMode').addEventListener('change',updateContentMode);
-function updateEngine(){const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=hosted;const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
+function updateEngine(){const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=$('writerBackend').value!=='local';$('nvidiaSettings').hidden=$('writerBackend').value!=='nvidia';$('nvidiaTokenStatus').textContent=engineConfig?.nvidia_token_configured?'NVIDIA key configured on server.':'Set NVIDIA_API_KEY in the server environment or .env.';const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
 $('writerBackend').addEventListener('change',updateEngine);
 function updatePersona(){const p=personaCatalog.find(p=>p.id===$('personaSelect').value);if($('personaHint'))$('personaHint').textContent=p?p.direction+' Best for: '+p.best_for:'';}
 $('personaSelect').addEventListener('change',updatePersona);
@@ -32,7 +32,7 @@ async function start(mode,hook=null,previous=null,sceneIndex=null,revisionNotes=
     const job=await api('/api/scripts',{method:'POST',body:JSON.stringify({mode,brief:getBrief(),selected_hook:hook,use_experiments:$('useExperiments').checked,previous_script:previous,scene_index:sceneIndex,revision_notes:revisionNotes,parent_script_id:previous?active:null})});
     active=job.id;localStorage.setItem('tribe-writer-active',active);dirty=false;shownHooks='';shownLive='';$('retryJob').hidden=true;$('liveScriptSection').hidden=true;
     $('resultSection').hidden=!previous;if(previous){$('score').hidden=true;$('revisionStatus').textContent='Applying your changes. The original remains visible while the new draft generates.';}else $('hooks').replaceChildren(make('p','Working on your next draft…','muted'));
-    status('Queued for the local writer…');poll();return true;
+    status('Queued for the writer…');poll();return true;
   }catch(e){status(e.message,true);lock(false);return false;}
 }
 async function poll(){
@@ -44,9 +44,9 @@ async function poll(){
     pollFailures=0;
     const elapsed=job.elapsed_seconds?` · ${Math.round(job.elapsed_seconds)}s elapsed`:'';
     status(job.stage+elapsed+(job.error?' · '+job.error:''),job.status==='failed');
-    if(job.status==='failed'&&job.brief?.writer_backend==='huggingface'){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
-    $('retryJob').textContent=job.brief?.writer_backend==='huggingface'?'Retry locally (free)':'Retry saved job';
-    $('retryJob').dataset.localRetry=job.brief?.writer_backend==='huggingface'?'true':'false';
+    if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
+    $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
+    $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
     $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&['needs_review','unavailable'].includes(job.hook_options?.review_status));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
       renderHooks(job.hook_options.hooks,job.hook_options);shownHooks=JSON.stringify(job.hook_options);
@@ -145,7 +145,7 @@ async function init(){
     if(results[1].status==='fulfilled')for(const b of results[1].value){const o=make('option',b.name);o.value=b.id;$('brandSelect').append(o);}
     for(const r of results.slice(1))if(r.status==='rejected')status(r.reason.message,true);
     if(results[4].status==='fulfilled'){personaCatalog=results[4].value.personas;updatePersona();}
-    if(results[5].status==='fulfilled')engineConfig=results[5].value;updateEngine();
+    if(results[5].status==='fulfilled'){engineConfig=results[5].value;$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
     active=localStorage.getItem('tribe-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('tribe-writer-active');}}
   }catch(e){status(e.message,true);}
 }

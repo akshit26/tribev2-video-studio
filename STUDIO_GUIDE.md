@@ -237,3 +237,14 @@ Brand documents up to 900 input tokens are assessed in one prioritized pass. The
 Review inference uses the 75/72 C cooling thresholds and temperature-dependent burst sizes above. Short NVENC clip exports use the dedicated video engine and the 76/74 C preflight thresholds; their live 82 C stop remains enabled.
 
 GPU monitoring reads the NVIDIA driver directly (NVML) without loading an inference model or launching a subprocess per sample; nvidia-smi remains a fallback. The 82 C emergency stop and 4 GB target remain active. `review_profile.json` separates inference request time, monitoring/cooling time, and cache hits. Inspection and OCR also save stage timings. No fixed 5-10 minute completion time is guaranteed for long videos, dense briefs, or hot/busy systems.
+
+
+## NVIDIA Nemotron content writer
+
+Set `NVIDIA_API_KEY` in the server environment or the ignored project `.env`, then restart Studio. In Script Writer, select **NVIDIA Nemotron 3 Ultra**. When a key is configured, new browser sessions default to NVIDIA; saved briefs keep their chosen engine. Local remains available. Never put a real key in source files or Git.
+
+The model is `nvidia/nemotron-3-ultra-550b-a55b`, using NVIDIA's OpenAI-compatible streaming endpoint at `https://integrate.api.nvidia.com/v1/chat/completions`. No additional SDK is required. NVIDIA receives the brief, selected references and previous script when revising. Usage limits and account charges depend on NVIDIA; this integration does not buy credits or silently switch providers.
+
+Nemotron handles hook creation, critiques, full scripts, paragraph revisions and Suggest changes through the existing persona and editorial review pipeline. Creative calls use temperature 1 and top-p 0.95; critique and repair calls use temperature 0. Thinking is enabled; only final spoken content enters the live preview, never reasoning. Output is bounded to 4,096?8,192 tokens per call and 24 calls per run. Checkpoints and usage metadata are separate from HF/local, with no credentials saved. Connection/quota failures preserve saved drafts and allow an explicit retry with Local. The 80+ score remains an editorial target, not a guarantee of audience performance.
+
+API reference: https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-ultra-550b-a55b-infer

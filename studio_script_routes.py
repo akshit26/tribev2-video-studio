@@ -73,7 +73,7 @@ def install(server):
     def process(script_id, request):
         path = directory(script_id)
         begun = time.monotonic()
-        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend")=="huggingface" else "Starting local writer", "progress": 1, "brief": request["brief"]}
+        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia"} else "Starting local writer", "progress": 1, "brief": request["brief"]}
         try:
             persist(path, state)
             def progress(percent, stage):
@@ -82,6 +82,9 @@ def install(server):
             if request["brief"].get("writer_backend", "local") == "huggingface":
                 from studio_script_hf import run_hf_writer
                 run_hf_writer(path,request,progress)
+            elif request["brief"].get("writer_backend") == "nvidia":
+                from studio_script_nvidia import run_nvidia_writer
+                run_nvidia_writer(path, request, progress)
             else:
                 from studio_pipeline import _run_worker, stage_pause
                 stage_pause(progress, 1, "Waiting for the GPU to be ready")

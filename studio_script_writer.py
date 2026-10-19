@@ -298,8 +298,8 @@ def brief_values(values):
         result[key] = text(values.get(key) or default, limit) if (values.get(key) or default) else ""
     if result["persona"] not in {p["id"] for p in personas()}:
         raise ValueError("Choose a supported writer persona.")
-    if result["writer_backend"] not in {"local","huggingface"}:
-        raise ValueError("Choose local or huggingface writer backend.")
+    if result["writer_backend"] not in {"local","huggingface","nvidia"}:
+        raise ValueError("Choose local, nvidia or huggingface writer backend.")
     if result["local_model"] not in {"auto","qwen35","qwen3"}:
         raise ValueError("Choose auto, qwen35 or qwen3 local model.")
     from studio_script_hf import MODELS

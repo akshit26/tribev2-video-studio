@@ -68,7 +68,7 @@ def _now() -> str:
 
 
 def _safe_error(exc: Exception) -> str:
-    return re.sub(r"hf_[A-Za-z0-9]+", "[redacted token]", str(exc))[:2000]
+    return re.sub(r"(?:hf_[A-Za-z0-9]+|nvapi-[A-Za-z0-9_-]+)", "[redacted token]", str(exc))[:2000]
 
 
 def _job_dir(job_id: str) -> Path:
