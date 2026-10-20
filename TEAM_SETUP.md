@@ -1,6 +1,6 @@
 # Team setup: local video report Studio
 
-This project runs locally on **Windows 10/11, Python 3.11, and an NVIDIA GPU with at least 6 GB VRAM**. The tested laptop uses a GTX 1660 Ti. Other GPUs and drivers may need changes to the CUDA runtime. The Studio uses a 4 GB total GPU target, processes one video at a time, and stops a worker if its memory or temperature guard trips. A score is an editorial assessment, not a measured chance of virality.
+This project runs locally on **Windows 10/11, Python 3.11, and an NVIDIA GPU with at least 6 GB VRAM**. The tested laptop uses a GTX 1660 Ti. Other GPUs and drivers may need changes to the CUDA runtime. The Studio uses an automatic maximum GPU target, leaving 512 MiB for the desktop plus a 256 MiB worker margin, processes one video at a time, and stops a worker if its memory or temperature guard trips. A score is an editorial assessment, not a measured chance of virality.
 
 Install [Git](https://git-scm.com/download/win), [Python 3.11](https://www.python.org/downloads/), a current [NVIDIA driver](https://www.nvidia.com/en-us/drivers/), and Microsoft Edge. Allow several gigabytes of free disk space for the Python environment and model downloads. The installer downloads model files from their public sources; no weights are stored in GitHub.
 

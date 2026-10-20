@@ -14,7 +14,7 @@ import sys
 import time
 from typing import Callable
 
-from studio_resources import (CPU_THREADS, RESERVE_MB, GPU_BUDGET_MB, GPU_GUARD_MB,
+from studio_resources import (CPU_THREADS, RESERVE_MB, GPU_BUDGET_MB, GPU_GUARD_MB, maximum_gpu_budget,
                               GPU_PAUSE_C, GPU_STOP_C, ResourcePressureError,
                               limit_cpu_threads, memory_info, require_memory)
 
@@ -72,14 +72,14 @@ def _cuda_ready() -> bool:
 
 def get_system_info() -> dict:
     gpu = gpu_info()
-    max_budget = max(0, min(GPU_BUDGET_MB, gpu["total_mb"] - 1536)) if gpu["available"] else 0
+    max_budget = maximum_gpu_budget(gpu["total_mb"]) if gpu["available"] else 0
     return {
-        "gpu": gpu, "cuda_ready": _cuda_ready(), "default_budget_mb": min(4096, max_budget),
+        "gpu": gpu, "cuda_ready": _cuda_ready(), "default_budget_mb": max_budget,
         "max_budget_mb": max_budget, "max_duration_seconds": MAX_DURATION,
         "profiles": [{"id": "compact", "name": "Multilingual creative review", "models": ["Faster Whisper large-v3-turbo", "Qwen3 4B Q4", "BLIP base"], "brain_inference": False}],
         "ram": memory_info(), "review_device": "cuda", "gpu_only": False,
         "stage_devices": {"speech":"cuda", "ocr":"cpu", "captions":"cuda", "review":"cuda"},
-        "memory_note": "Speech, captions and review run sequentially on GPU; OCR runs on CPU between stages. Temperature-aware pacing. 4 GB total GPU target; 1.5 GB free RAM to start, 768 MB reserve. Review runs in short token bursts. Temperature and memory are monitored, not hard caps.",
+        "memory_note": f"Automatic maximum GPU target: {max_budget/1024:g} GiB, with 512 MiB reserved for the desktop and a further 256 MiB worker margin. Models run sequentially. Temperature-aware pacing and the 82 C stop remain active. Allocating more memory alone does not make hosted models faster.",
     }
 
 
@@ -278,10 +278,11 @@ def _run_worker(task: str, video: Path, output: Path, device: str, budget_mb: in
     if device != "cuda":
         raise ValueError("Studio model inference is GPU-only; CPU fallback is disabled.")
     require_memory()
-    budget_mb = min(budget_mb, GPU_BUDGET_MB)
+    info = gpu_info()
+    maximum = maximum_gpu_budget(info['total_mb']) if info['available'] else 0
+    budget_mb = min(budget_mb or maximum, maximum)
     command = [sys.executable, str(Path(__file__).resolve()), "worker", task, "--video", str(video),
                "--output", str(output), "--device", device, "--budget-mb", str(budget_mb)]
-    info = gpu_info()
     expected_mb = 3300 if task in {"review", "review_probe"} else 1536
     if not info["available"] or info["used_mb"] > budget_mb - GPU_GUARD_MB - expected_mb:
         return False, info["used_mb"], "Insufficient free GPU budget before starting the model."
@@ -457,8 +458,9 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
     video = Path(video).resolve()
     output.mkdir(parents=True, exist_ok=True)
     system = get_system_info()
-    if budget_mb != GPU_BUDGET_MB or budget_mb > system["max_budget_mb"]:
-        raise ValueError("GPU target must be 4096 MiB with room left for the desktop.")
+    budget_mb = budget_mb or system['max_budget_mb']
+    if not 1024 <= budget_mb <= system["max_budget_mb"]:
+        raise ValueError("GPU target exceeds the detected maximum with desktop reserve, or is below 1024 MiB.")
     if not system["cuda_ready"] or not system["gpu"]["available"]:
         raise RuntimeError("A working NVIDIA GPU is required. CPU model fallback is disabled.")
     progress(5, "Measuring video, audio, and visual changes")
@@ -544,7 +546,7 @@ def run_analysis(video: Path, output: Path, budget_mb: int, vision: bool,
         "device": "cuda" if devices and all(d == "cuda" for d in devices) else "mixed" if "cuda" in devices else "cpu",
         "gpu_name": system["gpu"]["name"], "budget_mb": budget_mb, "peak_gpu_mb": peak,
         "peak_gpu_scope": "total", "models": models, "warnings": warnings, "brain_inference": False,
-        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts work size to temperature. 4 GB total GPU target with 256 MiB margin; pause at 75 C until 72 C; stop active inference at 82 C. A fresh idle cooling heartbeat may continue briefly up to 83 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
+        "memory_policy": "Speech/captions/review on GPU, CPU OCR between stages; one model worker at a time; review reuses GPU prompt context and adjusts work size to temperature. Automatic maximum total GPU target with 512 MiB desktop reserve and 256 MiB margin; pause at 75 C until 72 C; stop active inference at 82 C. A fresh idle cooling heartbeat may continue briefly up to 83 C. 1.5 GB free RAM to start, 768 MB runtime reserve. Sampled guards, not hard system-wide caps.",
     }
     progress(58, "Preparing transcript evidence for detailed review")
     report = build_report(info, measurements, transcript, scenes, processing)
@@ -599,6 +601,7 @@ def resume_analysis(video, output, budget_mb, vision, progress):
     report["processing"]["peak_gpu_mb"] = max(peak, report["processing"].get("peak_gpu_mb", 0))
     report["processing"]["models"].append("Qwen3-4B-Instruct-2507 Q4_K_M / CUDA")
     report["processing"]["device"] = "cuda"
+    report["processing"]["budget_mb"] = budget_mb or get_system_info()['max_budget_mb']
     return export_report(report, video, output, progress)
 
 
@@ -631,7 +634,7 @@ def main():
     parser.add_argument("--video", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
-    parser.add_argument("--budget-mb", type=int, default=4096)
+    parser.add_argument("--budget-mb", type=int, default=0, help="0 selects the detected maximum with desktop reserve")
     parser.add_argument("--no-vision", action="store_true")
     args = parser.parse_args()
     if args.mode == "worker":

@@ -6,7 +6,8 @@ import psutil
 START_FREE_MB = 1536
 RESERVE_MB = 768
 CPU_THREADS = 4
-GPU_BUDGET_MB = 4096
+GPU_BUDGET_MB = 4096  # Legacy compatibility value; not a cap. Use maximum_gpu_budget().
+GPU_DESKTOP_RESERVE_MB = 512
 GPU_GUARD_MB = 256
 GPU_PAUSE_C = 76
 GPU_STOP_C = 82
@@ -14,6 +15,11 @@ GPU_STOP_C = 82
 
 class ResourcePressureError(RuntimeError):
     """Stop the job; retrying a model would add more resource pressure."""
+
+
+def maximum_gpu_budget(total_mb):
+    """Total-device target; the runtime guard reserves another 256 MiB within it."""
+    return max(0, (int(total_mb) - GPU_DESKTOP_RESERVE_MB) // 256 * 256)
 
 
 def memory_info():

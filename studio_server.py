@@ -126,7 +126,7 @@ def _load_job(job_id: str) -> dict[str, Any]:
 def _process_job(job_id: str, video: Path, budget_mb: int, vision: bool, resume: bool = False) -> None:
     global _active_job
     try:
-        _update_job(job_id, status="running", progress=1, stage="Starting analysis")
+        _update_job(job_id, status="running", progress=1, stage="Starting analysis", budget_mb=budget_mb)
 
         def progress(percent: int, stage: str) -> None:
             _update_job(job_id, progress=max(1, min(99, int(percent))), stage=str(stage))
@@ -200,7 +200,7 @@ def system_info():
     info = get_system_info()
     with _lock:
         return {**info, "busy": _active_job is not None, "active_job_id": _active_job,
-                "upload_limit_mb": 250, "budget_min_mb": 4096, "budget_max_mb": info.get("max_budget_mb", 4096)}
+                "upload_limit_mb": 250, "budget_min_mb": 1024, "budget_max_mb": info.get("max_budget_mb", 4096)}
 
 
 @app.get("/creative.js")
@@ -216,7 +216,7 @@ def creative_style():
 @app.post("/api/jobs", status_code=202)
 async def create_job(
     video: Annotated[UploadFile, File()],
-    budget_mb: Annotated[int, Form(ge=4096, le=4096)] = 4096,
+    budget_mb: Annotated[int, Form(ge=0, le=262144)] = 0,
     vision: Annotated[bool, Form()] = True,
     language: Annotated[str, Form()] = "auto",
     platform: Annotated[str, Form()] = "general",
@@ -228,6 +228,11 @@ async def create_job(
     global _active_job
     from studio_review import LANGUAGES
     from studio_brands import snapshot, outcome_values, read_brand
+    maximum_budget=get_system_info()['max_budget_mb']
+    budget_mb=budget_mb or maximum_budget
+    if not 1024 <= budget_mb <= maximum_budget:
+        await video.close()
+        raise HTTPException(422,'GPU target exceeds the detected maximum with desktop reserve.')
     try:
         if purpose not in {"candidate", "reference"} or (purpose == "reference" and not brand_id):
             raise ValueError("Reference videos need a saved brand.")
@@ -327,7 +332,7 @@ def retry_job(job_id: str):
             raise HTTPException(409, "Only a failed analysis can be resumed, while Studio is idle.")
         _active_job = job_id
         _update_job(job_id, status="queued", stage="Resuming saved analysis", error=None)
-    _executor.submit(_process_job, job_id, video, 4096, bool(job.get("vision", True)), True)
+    _executor.submit(_process_job, job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
     return _load_job(job_id)
 
 
@@ -376,7 +381,7 @@ def correct_transcript(job_id: str, changes: Annotated[dict, Body()]):
         _transcript_files(report["transcript"], directory)
         _active_job = job_id
         _update_job(job_id, status="queued", stage="Reviewing corrected transcript", error=None, progress=1)
-    _executor.submit(_process_job, job_id, video, 4096, bool(job.get("vision", True)), True)
+    _executor.submit(_process_job, job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
     return _load_job(job_id)
 
 

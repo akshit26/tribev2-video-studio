@@ -28,6 +28,8 @@ Opinions can be proposed talking points; factual claims must use supplied facts.
 Slogans are figurative, never new product-use instructions. Never invent application times, doses or leave-in instructions.
 If usage directions are missing, omit the instruction or refer to the product label without inventing its contents.
 Use the requested language for spoken words. Reference cards are guidance, not quotations or proof of virality.
+Research_context contains unverified topic hypotheses and snippets, never verified product facts, usage instructions or efficacy proof.
+Do not promote a research idea or a reported claim to a product promise. Only the brief's verified facts and actual creator notes support claims.
 Never claim voice, visuals, audience or brain responses were measured by text review.
 """
 RUBRIC = {
@@ -305,11 +307,13 @@ def brief_values(values):
                                 ("content_mode", "organic", 30), ("content_format", "auto", 40),
                                 ("production_style", "solo_simple", 40), ("persona", "auto", 50), ("niche", "auto", 30),
                                 ("writer_backend", "local", 30), ("local_model", "auto", 30), ("hf_model", "deepseek-ai/DeepSeek-V4.1-Flash", 140),
-                                ("creator_experience", "", 1000)]:
+                                ("creator_experience", "", 1000), ("research_id", "", 32)]:
         result[key] = text(values.get(key) or default, limit) if (values.get(key) or default) else ""
     from studio_script_examples import NICHES
     from studio_script_language import normalize_language
     result["language"] = normalize_language(result["language"])
+    if result['research_id'] and not re.fullmatch(r'[a-f0-9]{32}',result['research_id']):
+        raise ValueError('Choose valid saved topic research.')
     if result["niche"] not in NICHES:
         raise ValueError("Choose a supported content niche.")
     if result["persona"] not in {p["id"] for p in personas()}:

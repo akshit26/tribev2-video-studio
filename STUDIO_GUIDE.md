@@ -1,3 +1,5 @@
+> Current GPU policy (2026-10-20): automatic maximum with 512 MiB desktop reserve and 256 MiB additional worker margin. On the tested 6 GiB GTX 1660 Ti, the target is 5.5 GiB. Historical 4 GiB measurements below describe the previous configuration. The 82 C stop and temperature-aware pacing remain active. Hosted Muse/Nemotron inference uses NVIDIA servers, not this GPU.
+
 # Local creative report studio
 
 ## Script Writer
@@ -236,7 +238,7 @@ Brand documents up to 900 input tokens are assessed in one prioritized pass. The
 
 Review inference uses the 75/72 C cooling thresholds and temperature-dependent burst sizes above. Short NVENC clip exports use the dedicated video engine and the 76/74 C preflight thresholds; their live 82 C stop remains enabled.
 
-GPU monitoring reads the NVIDIA driver directly (NVML) without loading an inference model or launching a subprocess per sample; nvidia-smi remains a fallback. The 82 C emergency stop and 4 GB target remain active. `review_profile.json` separates inference request time, monitoring/cooling time, and cache hits. Inspection and OCR also save stage timings. No fixed 5-10 minute completion time is guaranteed for long videos, dense briefs, or hot/busy systems.
+GPU monitoring reads the NVIDIA driver directly (NVML) without loading an inference model or launching a subprocess per sample; nvidia-smi remains a fallback. The 82 C emergency stop remains active; the GPU target is now detected automatically. `review_profile.json` separates inference request time, monitoring/cooling time, and cache hits. Inspection and OCR also save stage timings. No fixed 5-10 minute completion time is guaranteed for long videos, dense briefs, or hot/busy systems.
 
 
 ## NVIDIA Nemotron content writer
@@ -273,3 +275,20 @@ After generating a script, click **Estimate with Kumo**. It uses current editor 
 Only numerical speech features, a first-person indicator, dates, synthetic row IDs and historical labels are sent to NVIDIA. These features include duration, word count, opening length, mean sentence length, question count and stock-ad-phrase count. Raw script text, account name, product facts, outcome rule text, views and other post-outcome measurements are not sent as input features. The script's meaning, delivery, visuals and audience are not modeled by these simple features. Never interpret the estimate as a calibrated viral prediction or as proof that changing a word causes performance. The prediction does not alter the draft, editorial grade or revision ranking. API failures leave the draft intact and do not retry automatically.
 
 Reference API: https://docs.api.nvidia.com/nim/reference/nvidia-kumo-relational-statuspolling
+
+
+## Topic research with Meta Muse
+
+Set `MUSE_API_KEY` in the server environment or ignored `.env`. Existing `NVIDIA_API_KEY` is a fallback. In Script Writer, use **Topic research with Muse**: enter a topic, or leave it blank to use the brief topic. It takes the selected niche, language and platform, searches recent public news RSS snippets, and calls `meta/muse-glimmer-30b` via NVIDIA. No additional SDK or paid search subscription is required; NVIDIA account usage limits still apply. The request uses temperature 1, top-p 0.95, 8,192 maximum tokens, medium reasoning and non-streamed output. Only final research text is retained, never reasoning or credentials.
+
+Muse returns source-linked observations, three creative angle suggestions, audience questions and cautions. Sources are snippet-level evidence, not verified article bodies, creator transcripts or measured viral successes. Search is requested for the last 90 days, but review the returned dates and sources yourself. If search is unavailable, the tool explicitly uses historical curated format notes and warns that they are not fresh topic evidence. Failed synthesis preserves retrieved sources and requires a manual retry. No hidden inference retries run.
+
+Research runs in its own single remote-job slot and can run while GPU analysis is busy. Completed dossiers are saved in ignored `results/_research`. Open one from the saved list and select **Use these notes in my script brief**. Attaching notes fills the topic and niche. The server checks that notes match the topic and niche and supplies a bounded unverified `research_context` to the script writer and its reviewer. Research never fills verified product facts or becomes efficacy proof. Deselect the checkbox to omit it. This is source-assisted in-context learning, not weight fine-tuning. Topic searches are sent to the public news service; topic metadata and selected snippets are sent to NVIDIA.
+
+## Maximum local GPU mode
+
+The UI selects the maximum detected target automatically. `0` on the pipeline CLI also selects automatic mode; explicit smaller budgets remain supported. On a 6,144 MiB GPU this resolves to 5,632 MiB total device usage, with a worker stop threshold another 256 MiB below that target. Other GPUs derive their target from total VRAM, rounded down to 256 MiB after reserving 512 MiB for the desktop. Existing API clients may still request 4,096 MiB explicitly.
+
+At targets of at least 5,120 MiB, local review/writing uses an 8,192-token context and 128/64 batch/micro-batch instead of the smaller 6,144-token, 32/16 configuration. Full GPU layer offload remains enabled. Model stages still run sequentially, free-memory checks remain active and hot GPUs still pause or stop. Higher allocation headroom does not require filling VRAM and is not a promise of lower latency, especially during thermal pauses.
+
+Muse API reference: https://docs.api.nvidia.com/nim/reference/meta-muse-glimmer-30b-infer

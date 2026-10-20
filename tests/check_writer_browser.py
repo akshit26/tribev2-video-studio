@@ -23,10 +23,23 @@ def main():
     result['history']=[result['best']]
     state={'id':sid,'status':'completed','stage':'Ready','progress':100,'brief':base,'hook_options':{'hooks':hooks}}
     saved={}
+    research_id='c'*32
+    research_state={'id':research_id,'status':'completed','stage':'Topic research ready','brief':{'topic':base['topic'],'niche':'fmcg','language':'English'},
+        'result':{'summary':'Notebook topic research.','method':'Fixture source-linked hypotheses.','findings':[{'observation':'One specific writing frustration.','source_ids':['R1']}],
+            'angles':[{'idea':'A simple solo rant.','source_ids':['R1']}],'questions':['What blocks the first line?'],'avoid':['No invented performance results.'],
+            'sources':[{'id':'R1','title':'Notebook reference','url':'https://example.com/story','excerpt':'Source snippet.','evidence':'Fixture snippet only','published_at':''}],'warnings':[]}}
     requests=[]
     def handle(route):
         request=route.request
         path=urlsplit(request.url).path
+        if path=='/api/scripts/research/config':
+            route.fulfill(json={'configured':True,'active_id':None});return
+        if path=='/api/scripts/research':
+            if request.method=='POST':saved['research_request']=request.post_data_json;route.fulfill(status=202,json=research_state)
+            else:route.fulfill(json=[])
+            return
+        if path==f'/api/scripts/research/{research_id}':
+            route.fulfill(json=research_state);return
         if path=='/api/scripts/engines':
             route.fulfill(json={'default_backend':'nvidia','nvidia_token_configured':True,'token_configured':False,'local_models':[]});return
         if path=='/api/scripts/performance-data':
@@ -113,6 +126,11 @@ def main():
         page.locator('[name=creator_experience]').fill('First look at the notebook on my desk; not used yet.')
         assert page.locator('[name=creative_freedom]').input_value()=='wild'
         page.locator('[name=creative_notes]').fill('Deadpan comedy; one actor.')
+        page.locator('#researchStart').click()
+        page.wait_for_function("document.getElementById('researchStatus').textContent === 'Topic research ready'")
+        assert page.locator('#useResearch').is_checked()
+        assert saved['research_request']['topic']==base['topic']
+        assert 'Source snippet.' in page.locator('#researchResult').inner_text()
         page.locator('#hooksButton').click()
         page.locator('#hooks .hook').last.wait_for()
         assert page.locator('#hooks .hook').count()==5
@@ -120,6 +138,7 @@ def main():
         assert 'FIRST FRAME' not in page.locator('#hooks').inner_text()
         assert 'ON SCREEN' not in page.locator('#hooks').inner_text()
         assert requests[0]['brief']['creative_notes']=='Deadpan comedy; one actor.'
+        assert requests[0]['brief']['research_id']==research_id
         assert requests[0]['brief']['content_mode']=='ugc'
         assert requests[0]['brief']['writer_backend']=='local'
         assert requests[0]['brief']['hf_credits_allowed'] is False
@@ -195,6 +214,11 @@ def main():
         page.set_viewport_size({'width':390,'height':844})
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         page.screenshot(path=str(output/'mobile.png'),full_page=True)
+        expected=page.request.get(BASE_URL+'/api/system').json()['default_budget_mb']
+        page.goto(BASE_URL+'/')
+        page.wait_for_function("document.getElementById('gpuBudgetLabel').textContent.includes('target')")
+        if expected:
+            assert page.locator('input[name=budget_mb]:checked').input_value()==str(expected)
         browser.close()
     assert not errors,errors
     print(json.dumps({'browser_errors':errors,'mobile_overflow':False,'hook_selection':True,'manual_edits':True,'scene_regeneration':True}))

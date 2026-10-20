@@ -299,7 +299,7 @@ class AnalysisFallbackTests(unittest.TestCase):
 
     def test_out_of_range_budget_fails_before_video_or_model_work(self):
         with patch.object(pipeline, "_run_worker") as worker:
-            for budget in (0, 1023, 4608, 5120, 6144):
+            for budget in (-1, 1023, 6144, 65536):
                 with self.subTest(budget=budget), self.assertRaisesRegex(ValueError, "GPU target"):
                     self.analyze(budget=budget)
             worker.assert_not_called()

@@ -12,6 +12,8 @@ import studio_script_writer as writer
 
 def install(server):
     app = server.app
+    from studio_script_research_routes import install as install_research
+    read_research = install_research(server)
 
     def directory(script_id):
         if not server.JOB_ID.fullmatch(script_id):
@@ -88,7 +90,7 @@ def install(server):
             else:
                 from studio_pipeline import _run_worker, stage_pause
                 stage_pause(progress, 1, "Waiting for the GPU to be ready")
-                ok, _, reason = _run_worker("review", path / "unused.mp4", path, "cuda", 4096, progress, 1, 99)
+                ok, _, reason = _run_worker("review", path / "unused.mp4", path, "cuda", server.get_system_info()["default_budget_mb"], progress, 1, 99)
                 if not ok:
                     raise RuntimeError(reason)
             state.update(status="completed", progress=100, stage="Hook options ready" if request["mode"] == "hooks" else "Script revision finished")
@@ -236,6 +238,9 @@ def install(server):
             brief["generation_seed"] = uuid.uuid4().int % 2147483647
             from studio_script_hf import validate_configuration
             validate_configuration(brief)
+            if brief.get('research_id'):
+                from studio_script_research import writing_context
+                brief['research_context']=writing_context(read_research(brief['research_id']),brief)
             mode = values.get("mode", "hooks")
             if mode not in {"hooks", "script"}:
                 raise ValueError("Choose hooks or script.")

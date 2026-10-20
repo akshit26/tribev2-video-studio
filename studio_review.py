@@ -228,13 +228,13 @@ def review_prompt(report: dict, source_data) -> str:
 REVIEW_CONTEXT = 6144
 
 
-def review_command(binary, port, model=None):
+def review_command(binary, port, model=None, budget_mb=4096):
     # Smaller context/batches, plain f16 cache, no flash attention, no host
     # prompt cache. Explicit full offload prevents an automatic CPU split.
     return [str(binary), "-m", str(model or MODEL), "--host", "127.0.0.1", "--port", str(port),
             "--load-mode", "none", "--no-host",
-            "-c", str(REVIEW_CONTEXT), "-ngl", "all", "--fit", "off",
-            "-b", "32", "-ub", "16", "-ctk", "f16", "-ctv", "f16", "-fa", "off",
+            "-c", str(8192 if budget_mb>=5120 else REVIEW_CONTEXT), "-ngl", "all", "--fit", "off",
+            "-b", "128" if budget_mb>=5120 else "32", "-ub", "64" if budget_mb>=5120 else "16", "-ctk", "f16", "-ctv", "f16", "-fa", "off",
             "-t", "2", "-tb", "2", "--poll", "0", "--poll-batch", "0", "-np", "1",
             "--cache-ram", "0", "--ctx-checkpoints", "0", "--no-context-shift", "--no-webui"]
 
@@ -265,7 +265,8 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
     env = os.environ.copy()
     env["PATH"] = str(ROOT / ".venv/Lib/site-packages/torch/lib") + os.pathsep + env.get("PATH", "")
     env["LLAMA_API_KEY"] = api_key
-    command = review_command(binary, port, model)
+    context_tokens = 8192 if budget_mb>=5120 else REVIEW_CONTEXT
+    command = review_command(binary, port, model, budget_mb)
     if script_mode and model.name.startswith("Qwen3.5"):
         command += ["--reasoning", "off", "--reasoning-budget", "0", "--chat-template-kwargs", json.dumps({"enable_thinking":False})]
 
@@ -347,7 +348,7 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
                     "payoff or repeated ideas. Preserve the joke when suggesting a correction.")
             part = generate_bursts(request,
                                   [{"role": "system", "content": active_system}, {"role": "user", "content": prompt}],
-                                  tokens, pause, label, REVIEW_CONTEXT, gpu_cache)
+                                  tokens, pause, label, context_tokens, gpu_cache)
         except ValueError as exc:
             partial_path.unlink(missing_ok=True)
             (output / "review_invalid_output.txt").write_text(gpu_cache.get("last_output", ""), encoding="utf-8")
@@ -384,7 +385,7 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
                 result = complete('Return exactly this JSON, with no additional text: ' + json.dumps(expected, ensure_ascii=False), 128, "Multilingual GPU runtime check")
                 if result != expected:
                     raise ValueError("GPU runtime check returned unexpected text")
-                _write_json(output / "gpu_probe.json", {"ok": True, "device": device, "context_tokens": REVIEW_CONTEXT, "languages": result})
+                _write_json(output / "gpu_probe.json", {"ok": True, "device": device, "context_tokens": context_tokens, "languages": result})
                 return
             # Compact metadata preserves every original word while avoiding
             # unnecessary summary calls for ordinary short ads.
@@ -418,7 +419,7 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
                 from studio_brand_review import generate_brand_review
                 generate_brand_review(report, review, source_data, complete, count_tokens, progress)
             review.update(device=device, condensed_transcript=condensed, context=report.get("review_context", {}),
-                          execution="sequential-parts", context_tokens=REVIEW_CONTEXT)
+                          execution="sequential-parts", context_tokens=context_tokens)
             _write_json(output / "review.json", review)
         finally:
             if process.poll() is None:

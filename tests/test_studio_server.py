@@ -20,6 +20,7 @@ class StudioServerTests(unittest.TestCase):
         self.results = Path(self.directory.name)
         self.patchers = [
             patch.object(server, "require_memory"),
+            patch.object(server, "get_system_info", return_value={"max_budget_mb":5632,"default_budget_mb":5632}),
             patch.object(server, "RESULTS_DIR", self.results),
             patch.object(server, "_jobs", {}),
             patch.object(server, "_active_job", None),
@@ -52,7 +53,7 @@ class StudioServerTests(unittest.TestCase):
     def test_complete_report_downloads_and_private_input(self):
         def analyze(video, output, budget_mb, vision, progress):
             self.assertEqual(video.read_bytes(), b"test video")
-            self.assertEqual(budget_mb, 4096)
+            self.assertEqual(budget_mb, 5632)
             self.assertTrue(vision)
             self.assertEqual(json.loads((output / "upload_info.json").read_text())["original_name"], "example.mp4")
             progress(45, "Testing analysis")
@@ -114,9 +115,9 @@ class StudioServerTests(unittest.TestCase):
         with patch.object(server, "run_analysis") as mock:
             self.assertEqual(self.upload("script.py").status_code, 415)
             self.assertEqual(self.upload(content=b"").status_code, 400)
-            self.assertEqual(self.upload(budget_mb="2048").status_code, 422)
+            self.assertEqual(self.upload(budget_mb="1023").status_code, 422)
             self.assertEqual(self.upload(budget_mb="8192").status_code, 422)
-            self.assertEqual(self.upload(budget_mb="5120").status_code, 422)
+            self.assertEqual(self.upload(budget_mb="262145").status_code, 422)
             with patch.object(server, "MAX_UPLOAD_BYTES", 4):
                 self.assertEqual(self.upload(content=b"12345").status_code, 413)
             self.assertIsNone(server._active_job)

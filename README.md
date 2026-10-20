@@ -16,7 +16,7 @@ TRIBE v2 is a deep multimodal brain encoding model that predicts fMRI brain resp
 
 ## Local video report studio
 
-Double-click `Start Studio.cmd` for the local upload interface, numeric hook/CTA/creative-review scores, emotional-language values, and downloadable PDF reports. See [STUDIO_GUIDE.md](STUDIO_GUIDE.md). The compact Studio profile uses sequential GPU models and a monitored 4 GB target; it does not run full TRIBE fMRI inference or predict audience outcomes.
+Double-click `Start Studio.cmd` for the local upload interface, numeric hook/CTA/creative-review scores, emotional-language values, and downloadable PDF reports. See [STUDIO_GUIDE.md](STUDIO_GUIDE.md). The compact Studio profile uses sequential GPU models and an automatic maximum GPU target (5.5 GiB on the tested 6 GiB GPU, with desktop and worker reserves); it does not run full TRIBE fMRI inference or predict audience outcomes.
 
 Install the recommended free local writer once with `.venv\Scripts\python.exe prepare_writer.py`. Model weights and generated drafts stay outside Git.
 

@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 const make = (tag, content, cls) => { const e=document.createElement(tag); if(content!==undefined)e.textContent=String(content); if(cls)e.className=cls; return e; };
 let personaCatalog=[],engineConfig=null,exampleCatalog=null;
+let researchActive=null,researchCurrent=null,researchTimer=null;
 let active=null, current=null, library=null, editorBase=null, dirty=false, busy=false, pollTimer=null, shownHooks='', shownLive='', pollFailures=0;
 async function api(url, options={}) {
   const response=await fetch(url, {...options, headers:{"Content-Type":"application/json",...(options.headers||{})}});
@@ -11,8 +12,8 @@ async function api(url, options={}) {
 }
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
 function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
-function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=Number(b.duration);b.hf_credits_allowed=$('hfCreditsAllowed').checked;return b;}
-function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();}
+function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=Number(b.duration);b.hf_credits_allowed=$('hfCreditsAllowed').checked;b.research_id=$('useResearch').checked&&researchCurrent?.status==='completed'?researchCurrent.id:'';return b;}
+function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
 function updateContentMode(){
   const hints={organic:'Story, humor or useful discovery first. Product presence stays natural; leave CTA blank for a story ending.',ugc:'Creator voice, phone footage and everyday context. Add real experience above; otherwise the writer uses a first look, observation or staged scene.',paid_ad:'Product-led communication with supported benefits and your chosen CTA.'};
   $('contentModeHint').textContent=hints[$('contentMode').value];
@@ -171,4 +172,32 @@ async function loadPerformance(){const data=await api('/api/scripts/performance-
 $('importPerformance').onclick=async()=>{const button=$('importPerformance');try{const file=$('performanceFile').files[0];if(!file)throw new Error('Choose your post-outcomes JSON file first.');if(file.size>4_000_000)throw new Error('Keep the import below 4 MB.');button.disabled=true;await api('/api/scripts/performance-data',{method:'PUT',body:await file.text()});await loadPerformance();}catch(e){$('performanceStatus').textContent=e.message;}finally{button.disabled=false;}};
 $('predictPerformance').onclick=async()=>{if(busy||!editorBase||!current?.result)return;const requestId=active,submitted=JSON.stringify(editedScript());const button=$('predictPerformance');button.disabled=true;$('performanceResult').textContent='Comparing with your real post history?';try{const data=await api('/api/scripts/'+requestId+'/predict',{method:'POST',body:JSON.stringify({script:JSON.parse(submitted)})});if(active!==requestId||JSON.stringify(editedScript())!==submitted){$('performanceResult').textContent='Draft changed while estimating. Run a new estimate for the current words.';return;}$('performanceResult').textContent=`Experimental estimate: ${Math.round(data.probability*100)}% for your defined outcome, ?${data.outcome_definition}?. Historical base rate: ${Math.round(data.base_rate*100)}% across ${data.context_rows} comparable posts. Uncalibrated; not a viral score. `+data.method;}catch(e){$('performanceResult').textContent=e.message;}finally{button.disabled=busy;}};
 
+
+function attachResearch(){if(!$('useResearch').checked||researchCurrent?.status!=='completed')return;$('briefForm').elements.namedItem('topic').value=researchCurrent.brief.topic;$('nicheSelect').value=researchCurrent.brief.niche;$('referenceNiche').value=researchCurrent.brief.niche;renderReferences();}
+$('useResearch').onchange=attachResearch;
+function renderResearch(state){
+  const result=state.result, snapshot=result||state.source_snapshot;
+  $('researchResult').replaceChildren();
+  $('researchStatus').textContent=state.stage+(state.error?' ? '+state.error:'');
+  $('useResearch').disabled=state.status!=='completed';
+  if(state.status!=='completed')$('useResearch').checked=false;
+  if(!snapshot)return;
+  if(result){
+    $('researchResult').append(make('p',result.summary),make('p',result.method,'muted small'));
+    for(const [key,label,field] of [['findings','Source observations','observation'],['angles','Creative angles to test','idea']]){
+      $('researchResult').append(make('h3',label));
+      for(const row of result[key])$('researchResult').append(make('p',row[field]+' ['+row.source_ids.join(', ')+']'));
+    }
+    for(const [key,label] of [['questions','Questions to explore'],['avoid','Claims and assumptions to avoid']]){$('researchResult').append(make('h3',label));for(const text of result[key])$('researchResult').append(make('p',text));}
+  }
+  for(const warning of snapshot.warnings||[])$('researchResult').append(make('p',warning,'muted small'));
+  $('researchResult').append(make('h3','Sources and evidence limits'));
+  for(const source of snapshot.sources||[]){const card=make('article',undefined,'card');const link=make('a',source.id+' ? '+source.title);link.href=source.url;link.target='_blank';link.rel='noopener';card.append(link,make('p',source.excerpt),make('p',(source.published_at?source.published_at+' ? ':'')+source.evidence,'muted small'));$('researchResult').append(card);}
+}
+async function loadResearchHistory(){const rows=await api('/api/scripts/research');$('researchHistory').replaceChildren();for(const row of rows.slice(0,10)){const button=make('button',row.brief.topic+' ? '+row.status);button.type='button';button.onclick=()=>openResearch(row.id);$('researchHistory').append(button);}}
+async function openResearch(id,attach=false){if(researchActive!==id&&!attach)$('useResearch').checked=false;researchActive=id;localStorage.setItem('tribe-research-active',id);clearTimeout(researchTimer);try{const state=await api('/api/scripts/research/'+id);if(researchActive!==id)return;researchCurrent=state;renderResearch(state);const running=['queued','running'].includes(state.status);$('researchStart').disabled=running;if(running){researchTimer=setTimeout(()=>openResearch(id,attach),1200);}else{if(attach&&state.status==='completed'){$('useResearch').checked=true;attachResearch();}await loadResearchHistory();}}catch(e){$('researchStatus').textContent=e.message;$('researchStart').disabled=false;}}
+$('researchForm').onsubmit=async e=>{e.preventDefault();const b=getBrief();const topic=$('researchTopicInput').value.trim()||b.topic;try{if(!topic)throw new Error('Enter a topic in the brief or research box.');$('researchStart').disabled=true;$('useResearch').checked=false;$('researchStatus').textContent='Starting Muse topic research...';const state=await api('/api/scripts/research',{method:'POST',body:JSON.stringify({topic,niche:b.niche,language:b.language,platform:b.platform})});await openResearch(state.id,true);}catch(error){$('researchStatus').textContent=error.message;$('researchStart').disabled=false;}};
+async function initResearch(){try{const config=await api('/api/scripts/research/config');$('researchStatus').textContent=config.configured?'Muse configured on server. Ready to research a topic.':'Set MUSE_API_KEY on the server.';await loadResearchHistory();if(!researchActive){const saved=config.active_id||localStorage.getItem('tribe-research-active');if(saved)await openResearch(saved);}}catch(e){$('researchStatus').textContent=e.message;}}
+
 init();
+initResearch();
