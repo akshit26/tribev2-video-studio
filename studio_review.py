@@ -249,7 +249,8 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
     script_mode = "script_request" in report
     model = MODEL
     if script_mode:
-        from studio_script_writer import SYSTEM as script_system
+        from studio_script_writer import system_prompt
+        script_system=system_prompt(report['script_request']['brief'])
         from studio_script_local import resolve_local_model
         _, _, model = resolve_local_model(report["script_request"]["brief"])
     sources = evidence(report)

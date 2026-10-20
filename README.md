@@ -162,3 +162,42 @@ The fast API writer is the configured default; GPT-OSS/Gemma remains an explicit
 option. Rejected completions are removed from the retry cache, and repair calls
 receive the actual rejected draft and validation issues. A usable draft that
 still has quality issues is saved as needing review rather than lost or approved.
+
+
+### Multi-format direct-response writer
+
+New writer requests accept `brief.content_duration`: `short` (35-60 words),
+`mid` (140-170 words), or `long` (1,500-1,800 words). The UI provides the same
+three choices. Scripts remain a single `final_script` string; Mid uses inline
+pacing cues and Long uses inline section markers. Legacy scene-based saved work
+remains readable.
+
+Each new draft is checked by an external NVIDIA text-scoring call before approval.
+`score_draft_script` returns `has_cta`, `has_visual_demo`, `invented_experience`,
+`overall_score` and `critique`. Missing CTA, invented experience, score below 80,
+or deterministic format/claim violations trigger at most one rewrite. If the
+rewrite fails, the draft is retained as rejected and hidden from the publishable
+textarea/export. A scoring outage never assigns an approval or fabricated score.
+Editing an approved script hides its prior score; edits need a fresh revision to
+be assessed again.
+
+The scorer defaults to the verified Nemotron endpoint, using the configured NVIDIA
+credentials. `SCRIPT_SCORER_MODEL` can select another compatible NVIDIA model.
+Gemma is not the default because its endpoint failed prior live checks. Local/HF
+writing still requires NVIDIA access for the new scoring gate. Scores are
+uncalibrated editorial judgments, not forecasts of views or purchases.
+
+NVIDIA team/fast calls have 180-second read/connect timeouts, one fresh-client
+retry for a connection disconnect, and a shared 180-second deadline per call.
+HTTP errors and timeouts do not trigger automatic retries. A draft, its scoring
+call, and the optional rewrite/scoring calls each have their own bounded request.
+
+
+Nemotron scoring and long drafts use `chat_template_kwargs.enable_thinking=false`.
+Short/Mid drafts use low reasoning with an 8,192-token allowance so reasoning
+cannot consume the old 4,096-token allowance before the script is returned.
+Long drafts receive up to 12,000 output tokens. The hosted endpoint rejected a minimal `json_schema`
+response-format request with HTTP 500 during live testing, while the equivalent
+prompt-only request succeeded. The hosted `json_object` mode succeeded in the same check. It is used for
+Nemotron output, with strict script/score field and type validation in the app.
+Reasoning controls follow NVIDIA's [model guide](https://docs.nvidia.com/nim/large-language-models/latest/get-started/advanced/get-started-nemotron-3.5-super-vl.html).

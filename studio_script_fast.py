@@ -19,5 +19,6 @@ def run_fast_writer(output,request,progress):
     path=output/'script_result.json'
     if path.exists():
         result=json.loads(path.read_text(encoding='utf-8'))
-        result['pipeline']={'draft_model':MODEL,'analysis_model':None,'analysis_mode':'Single-block script; no local model or extra critique call.'}
+        from studio_evaluation import draft_scoring_model
+        result['pipeline']={'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'API pre-scoring gate; one rewrite maximum.'}
         _write_json(path,result)

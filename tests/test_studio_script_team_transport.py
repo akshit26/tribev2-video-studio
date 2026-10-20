@@ -26,6 +26,20 @@ class TeamTransportTests(unittest.TestCase):
         self.assertEqual(seen[0]['reasoning_effort'],'low');self.assertEqual(seen[0]['temperature'],.7)
         self.assertEqual(seen[0]['max_tokens'],4096)
 
+    def test_nemotron_role_budgets_preserve_draft_and_scoring_capacity(self):
+        seen=[];real=openai.AsyncOpenAI
+        def handler(request):
+            seen.append(json.loads(request.content))
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        def client(**kwargs):return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
+        with patch('openai.AsyncOpenAI',side_effect=client):
+            for budget in (1400,2500,12000):
+                team.chat_json('test-key','nvidia/nemotron-3.5-super-vl-120b-a12b','Return final_script JSON','Format draft',budget,.7)
+        self.assertTrue(all(body['response_format']=={'type':'json_object'} for body in seen))
+        self.assertEqual([body['max_tokens'] for body in seen],[4096,8192,12000])
+        self.assertEqual(seen[1]['reasoning_effort'],'low')
+        for body in (seen[0],seen[2]):self.assertEqual(body['chat_template_kwargs'],{'enable_thinking':False})
+
     def test_timeout_is_specific_and_not_retried(self):
         calls=[]
         def handler(request):calls.append(request);raise httpx.ReadTimeout('private endpoint detail')

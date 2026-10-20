@@ -665,3 +665,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def score_draft_script(script_text, brief, duration):
+    """Pre-publication API gate; no local model or GPU stage."""
+    from studio_evaluation import score_draft_script as score
+    return score(script_text, brief, duration)

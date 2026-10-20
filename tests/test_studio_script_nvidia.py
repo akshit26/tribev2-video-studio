@@ -51,11 +51,24 @@ class NvidiaTests(unittest.TestCase):
             self.assertTrue(any('voice' in note for note in returned['missing_proof']))
         with tempfile.TemporaryDirectory() as directory:
             request={'brief':dict(brief(),writer_backend='nvidia'),'mode':'script'}
+            request['brief'].pop('content_duration',None)  # Archived scene pipeline.
             with patch.object(n,'nvidia_token',return_value='nvapi-TEST'),patch.object(n,'chat_completion',return_value=(original,{})),patch.object(n,'voice_edit',side_effect=hf.HostedWriterError('quota')),patch.object(writer,'run_writer',side_effect=fake_writer):
                 n.run_nvidia_writer(Path(directory),request,lambda *a:None)
             usage=json.loads((Path(directory)/'nvidia_writer_usage.json').read_text())
             self.assertEqual(usage['calls_this_run'],2)
             self.assertTrue(usage['warnings'])
+
+    def test_multiformat_invalid_output_does_not_trigger_hidden_voice_rewrite(self):
+        from tests.test_studio_script_writer import brief
+        request={'brief':dict(brief(),writer_backend='nvidia',content_duration='short'),'mode':'script'}
+        def fake_writer(path,complete,progress):
+            self.assertEqual(complete('prompt',100,'Draft 1'),{'scenes':[]})
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(n,'nvidia_token',return_value='test-key'),patch.object(n,'chat_completion',return_value=({'scenes':[]},{})),patch.object(n,'voice_edit') as edit,patch.object(writer,'run_writer',side_effect=fake_writer):
+                n.run_nvidia_writer(Path(directory),request,lambda *args:None)
+            edit.assert_not_called()
+            usage=json.loads((Path(directory)/'nvidia_writer_usage.json').read_text())
+            self.assertEqual(usage['calls_this_run'],1)
 
     def test_credentials_environment_file_and_public_config(self):
         with tempfile.TemporaryDirectory() as directory:

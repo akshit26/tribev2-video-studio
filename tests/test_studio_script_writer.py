@@ -767,4 +767,5 @@ class WriterAPITests(unittest.TestCase):
         result=self.client.get('/api/scripts/'+sid).json()['result']
         self.assertIsNone(result['best']['assessment']['score'])
         self.assertFalse(result['target_met'])
-        self.assertEqual(self.client.get('/api/scripts/'+sid+'/export').text,writer.export_text(result))
+        self.assertEqual(self.client.get('/api/scripts/'+sid+'/export').status_code,409)
+        self.assertFalse(result['approved'])

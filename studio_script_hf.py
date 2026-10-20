@@ -79,7 +79,7 @@ def validate_configuration(brief):
 def chat_completion(token, model, system, prompt, max_tokens, temperature):
     body = {"model": model + ":cheapest", "messages": [
         {"role": "system", "content": system}, {"role": "user", "content": prompt}],
-        "max_tokens": min(max_tokens, 2400), "temperature": temperature,
+        "max_tokens": min(max_tokens, 12000), "temperature": temperature,
         "response_format": {"type": "json_object"}, "stream": False}
     request = urllib.request.Request(ENDPOINT, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"}, method="POST")
@@ -115,9 +115,10 @@ def chat_completion(token, model, system, prompt, max_tokens, temperature):
 def run_hf_writer(output, request, progress, provider=None):
     from studio_pipeline import _write_json
     from studio_review_cache import CompletionCache
-    from studio_script_writer import SYSTEM, WRITER_VERSION, library, run_writer
+    from studio_script_writer import SYSTEM, WRITER_VERSION, library, run_writer, system_prompt
     from studio_script_examples import catalog
     brief = request["brief"]
+    SYSTEM = system_prompt(brief)
     validate_configuration(brief)
     backend = brief.get('writer_backend','nvidia') if provider else "huggingface"
     model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
@@ -168,7 +169,7 @@ def run_hf_writer(output, request, progress, provider=None):
                 result,usage=provider.complete_stage(token,model,SYSTEM,prompt,tokens,1 if creative else 0,preview,label)
             else:
                 result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
-            if label.startswith('Draft') and 'repair' not in label and 'final_script' not in result:
+            if not brief.get('content_duration') and label.startswith('Draft') and 'repair' not in label and 'final_script' not in result:
                 progress(1 + 98*fraction, "Making the speech sound natural")
                 try:
                     if stats['calls_this_run'] >= MAX_CALLS:

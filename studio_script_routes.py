@@ -74,6 +74,9 @@ def install(server):
                 state["result"]={"brief":state["brief"],"best":{"script":original,"assessment":{"score":None,"criteria":[],"unsupported_claims":[],"blockers":[],"method":"Original draft retained; requested changes did not complete."}},"history":[],"target_met":False,"stop_reason":"requested_changes_not_completed","selected_hook":request.get("selected_hook"),"revision_notes":request.get("revision_notes","")}
         except (OSError,ValueError,KeyError,TypeError):
             pass
+        if state['brief'].get('content_duration') and state.get('result') and 'approved' not in state['result'] and state['result'].get('stop_reason') in {'review_unavailable','requested_changes_not_completed'}:
+            # An interrupted, unscored checkpoint must never bypass the gate.
+            state['result'].update(approved=False,quality_status='needs_review')
         if "result" in state:
             state["result"] = writer.recheck_saved_result(state["result"],state["brief"])
         try:
@@ -116,6 +119,7 @@ def install(server):
             state.update(status="completed", progress=100, stage="Script ready" if (path / "script_result.json").exists() else "Hook options ready")
             if (path / 'script_result.json').exists():
                 saved=json.loads((path / 'script_result.json').read_text(encoding='utf-8'))
+                if saved.get('approved') is True:state.update(stage='Script approved by pre-scoring gate')
                 if saved.get('quality_status')=='needs_review':state.update(stage='Draft saved; revise the flagged issues',warning='This draft has not passed the writing constraints.')
             if request["mode"] == "hooks" and not (path / "script_result.json").exists():
                 result = json.loads((path / "hooks.json").read_text(encoding="utf-8")) if (path / "hooks.json").exists() else {}
@@ -283,7 +287,10 @@ def install(server):
     def create(values: Annotated[dict, Body()]):
         from studio_pipeline import _write_json
         try:
-            brief = writer.brief_values(values.get("brief"))
+            raw_brief=values.get('brief')
+            if isinstance(raw_brief,dict) and 'content_duration' in values:
+                raw_brief=dict(raw_brief,content_duration=values['content_duration'])
+            brief = writer.brief_values(raw_brief)
             brief["generation_seed"] = uuid.uuid4().int % 2147483647
             from studio_script_hf import validate_configuration
             validate_configuration(brief)
@@ -443,6 +450,8 @@ def install(server):
         if "result" not in state:
             raise HTTPException(409, "No completed draft is available yet.")
         result = state["result"]
+        if result.get('approved') is False:
+            raise HTTPException(409,'This script has not passed pre-scoring. Generate an approved revision before exporting.')
         edited = directory(script_id) / "edited_script.json"
         if edited.exists():
             result["best"]["script"] = json.loads(edited.read_text(encoding="utf-8"))

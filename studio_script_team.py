@@ -32,9 +32,16 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
     from openai import AsyncOpenAI,APIStatusError,APITimeoutError,APIConnectionError
     body={'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':prompt}],
         'temperature':max(0,min(1,temperature)),'top_p':.95 if model.startswith('meta/muse') else 1,
-        'max_tokens':8192 if model.startswith('meta/muse') else 4096,'stream':False}
+        'max_tokens':8192 if model.startswith('meta/muse') else min(16384,max(4096,max_tokens)),'stream':False}
     if model==MODEL:body['reasoning_effort']='low'
-    if model=='nvidia/nemotron-3.5-super-vl-120b-a12b':body['reasoning_effort']='low'
+    if model=='nvidia/nemotron-3.5-super-vl-120b-a12b':
+        body['response_format']={'type':'json_object'}
+        if 1400<max_tokens<10000:
+            # Short/mid drafts need reasoning for reliable length and structure.
+            body.update(reasoning_effort='low',max_tokens=max(8192,max_tokens))
+        else:
+            # Direct scoring and long-form output reserve tokens for the answer.
+            body['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
     if model==GEMMA:
         body.update(max_tokens=min(2048,max(1024,max_tokens)),temperature=.5,frequency_penalty=0,presence_penalty=0,seed=0)
         body['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
@@ -123,7 +130,8 @@ def run_team_writer(output,request,progress):
     path=output/'script_result.json'
     if path.exists():
         data=json.loads(path.read_text(encoding='utf-8'))
-        data['pipeline']={'draft_model':MODEL,'analysis_model':None,'analysis_mode':'Single-block script generation; no automatic scene review.'}
+        from studio_evaluation import draft_scoring_model
+        data['pipeline']={'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'API pre-scoring gate; one rewrite maximum.'}
         from studio_script_tribe import draft_status
         data['tribe_v2']=draft_status()
         try:

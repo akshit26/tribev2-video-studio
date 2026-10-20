@@ -62,7 +62,7 @@ class HostedWriterTests(unittest.TestCase):
         body=json.loads(request.data)
         self.assertEqual(body['model'],hf.DEFAULT_MODEL+':cheapest')
         self.assertEqual(body['response_format'],{'type':'json_object'})
-        self.assertLessEqual(body['max_tokens'],2400)
+        self.assertLessEqual(body['max_tokens'],12000)
         self.assertEqual(result,{'hooks':[]})
         self.assertEqual(usage['completion_tokens'],10)
 

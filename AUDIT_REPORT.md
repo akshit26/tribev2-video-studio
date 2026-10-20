@@ -56,3 +56,31 @@ and selected book principles to the compact prompt. Found and blocked invented
 first-person product routines and unsupported dry-fingers/no-touch promises.
 A four-page PDF with exact generated script and test limitations is saved locally
 under results/audits/2026-10-20/. No conversion or virality probability was claimed.
+
+
+Multi-format direct-response pipeline: added content_duration short/mid/long with
+35-60, 140-170 and 1,500-1,800 spoken-word gates. New outputs use a single
+final_script string. Mid cues and Long section markers remain inline. The API
+pre-scoring gate validates five exact fields and allows at most two drafts in
+one run (initial plus one rewrite); missing CTA, invented experience, score below
+80, or deterministic constraint failures prevent approval. Scoring/rewrite
+outages retain diagnostics and saved work without approval. Rejected output is
+hidden from the publishable textarea and cannot be exported.
+
+Validation: 319 tests passed; writer and multi-format browser workflows passed
+with no JavaScript errors or mobile overflow. The live Short test produced 46
+words and a 95/100 gate assessment in 43.1 seconds. Live Mid produced 154 words
+but the judge miscounted it; scoring now receives the authoritative code-counted
+word total. A subsequent score took 5.8 seconds and rejected it for repetition.
+Long produced in-range drafts (1,564 and 1,759 words), with unsupported experience
+or claims correctly blocking approval. An independent fast score rejected the
+1,564-word draft at 75 in 10.5 seconds. These do not prove sales or virality.
+
+Provider findings: native json_schema requests returned HTTP 500 in a minimal
+hosted endpoint check; json_object succeeded and is now used with strict app-side
+schema validation. Some live runs encountered HTTP 500 and output-budget
+exhaustion. Short/Mid Nemotron drafts use low reasoning and 8,192 tokens; long
+output uses 12,000 tokens with thinking disabled. Scoring also disables thinking.
+Each team/fast request retains its 180-second total bound and one fresh-client
+connection retry. The entire multi-stage run can exceed 180 seconds. No automatic
+HTTP retries, extra voice-edit rewrites, or fabricated approvals were introduced.

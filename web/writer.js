@@ -12,10 +12,10 @@ async function api(url, options={}) {
 }
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
 function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
-function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=Number(b.duration);b.hf_credits_allowed=$('hfCreditsAllowed').checked;b.research_id=$('useResearch').checked&&researchCurrent?.status==='completed'?researchCurrent.id:'';return b;}
-function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=key==='duration'?'30':value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
+function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=({short:30,mid:60,long:600})[b.content_duration]||30;b.hf_credits_allowed=$('hfCreditsAllowed').checked;b.research_id=$('useResearch').checked&&researchCurrent?.status==='completed'?researchCurrent.id:'';return b;}
+function setBrief(brief){for(const [key,value] of Object.entries({content_duration:brief.content_duration||(brief.duration===60?'mid':'short'),content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
 function updateContentMode(){
-  const hints={organic:'Story, humor or useful discovery first. Product presence stays natural; leave CTA blank for a story ending.',ugc:'Creator voice, phone footage and everyday context. Add real experience above; otherwise the writer uses a first look, observation or staged scene.',paid_ad:'Product-led communication with supported benefits and your chosen CTA.'};
+  const hints={organic:'Story, humor or useful discovery first. Product presence stays natural; the scoring gate still requires one clear CTA.',ugc:'Creator voice, phone footage and everyday context. Add real experience above; otherwise the writer uses a first look, observation or staged scene.',paid_ad:'Product-led communication with supported benefits and your chosen CTA.'};
   $('contentModeHint').textContent=hints[$('contentMode').value];
 }
 $('contentMode').addEventListener('change',updateContentMode);
@@ -57,14 +57,14 @@ async function poll(){
     }
     $('progress').hidden=!['queued','running'].includes(job.status);$('progress').value=job.progress||0;
     if(['queued','running'].includes(job.status)){
-      if(job.live_draft?.paragraphs?.length){const key=JSON.stringify(job.live_draft.paragraphs);if(key!==shownLive){$('liveScript').replaceChildren(...job.live_draft.paragraphs.map(p=>make('p',p)));shownLive=key;}$('liveScriptSection').hidden=false;}
+      if(!job.brief?.content_duration&&job.live_draft?.paragraphs?.length){const key=JSON.stringify(job.live_draft.paragraphs);if(key!==shownLive){$('liveScript').replaceChildren(...job.live_draft.paragraphs.map(p=>make('p',p)));shownLive=key;}$('liveScriptSection').hidden=false;}
       lock(true);pollTimer=setTimeout(poll,1000);return;
     }
     $('liveScriptSection').hidden=true;
 
     current=job;lock(false);dirty=false;
     if(!job.hook_options&&!job.result)$('hooks').replaceChildren(make('p','No hooks are ready yet. Retry this saved job or start from the brief.','muted'));
-    if(job.result){renderResult(job.result);try{const draft=await api('/api/scripts/'+active+'/draft');renderScript(draft);$('score').hidden=true;$('editStatus').textContent='Saved manual edits loaded. This edited draft is unscored.';}catch(e){/* No manually edited draft is normal. */}}
+    if(job.result){renderResult(job.result);try{if(job.result.approved===false)throw new Error('Not approved');const draft=await api('/api/scripts/'+active+'/draft');renderScript(draft);$('score').hidden=true;$('editStatus').textContent='Saved manual edits loaded. This edited draft is unscored.';}catch(e){/* No manually edited draft is normal. */}}
     await loadSaved().catch(e=>status('Work is saved, but the saved-work list could not refresh. '+e.message,true));
   }catch(e){
     if(requestedId!==active)return;
@@ -93,7 +93,7 @@ function updateScriptTiming(script){
   const rates={english:[120,160,2],en:[120,160,2],hindi:[108,168,1.8],'hindi (roman)':[108,168,1.8],hinglish:[120,180,2]};
   const rate=rates[language];
   const seconds=Number(brief.duration);
-  $('scriptTiming').textContent=rate?`${words} words | Estimated ${Math.round(words*60/rate[1])}-${Math.round(words*60/rate[0])} seconds in ${brief.language} | Requested ${seconds}s. ${words<Math.floor(seconds*rate[2])?'Too short: develop the story. ':''}Approximate; read aloud to confirm.`:`${words} words | Requested ${seconds}s. Read aloud in the selected language to check timing.`;
+  $('scriptTiming').textContent=rate?`${words} words | Estimated ${Math.round(words*60/rate[1])}-${Math.round(words*60/rate[0])} seconds in ${brief.language} | Requested ${seconds}s. ${!brief.content_duration&&words<Math.floor(seconds*rate[2])?'Too short: develop the story. ':''}Approximate; read aloud to confirm.`:`${words} words | Requested ${seconds}s. Read aloud in the selected language to check timing.`;
 }
 function scriptText(script){return typeof script.final_script==='string'?script.final_script:(script.scenes||[]).map(row=>row.spoken||'').join(' ');}
 function resizeScript(){const area=$('finalScript');area.style.height='auto';area.style.height=Math.max(220,area.scrollHeight)+'px';}
@@ -115,9 +115,17 @@ function renderResult(result){
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
   if(assessment.score===null)line.replaceChildren(make('p',assessment.blockers?.length?'Draft saved. Revise the flagged issues before use.':'Script ready. Copy, edit or suggest changes below.'));
+  if(result.evaluation){line.replaceChildren(make('strong',result.evaluation.overall_score+'/100','score-number'),make('p',result.approved?'Approved by pre-scoring gatekeeper':'Not approved - one rewrite limit reached'),make('p',result.evaluation.critique));}
+  else if(result.approved===false){line.replaceChildren(make('p','Not approved - scoring unavailable'),make('p',assessment.critique||''));}
+  const rejected=result.approved===false;
+  if(rejected){$('finalScript').value='';$('scriptTiming').textContent='Rejected draft retained in saved work; no approved script to publish.';}
+  $('sceneEditor').hidden=rejected;
+  for(const id of ['saveDraft','reviseDraft','copyScript','textExport','printExport','applyChanges'])$(id).disabled=rejected;
+  $('textExport').hidden=rejected;$('printExport').hidden=rejected;
   $('score').replaceChildren(line);for(const issue of assessment.blockers||[])$('score').append(make('p','Needs revision: '+issue,'status')); $('editStatus').textContent='Best generated draft shown. Edits will need a fresh assessment.';
   $('history').replaceChildren();
-  for(const round of result.history){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScript(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
+  for(const round of result.history||[]){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScript(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
+  for(const round of result.gate_history||[]){const d=make('details');d.append(make('summary',`Gate attempt ${round.attempt} | ${round.evaluation?.overall_score??'Unavailable'}`));if(round.evaluation)d.append(make('p',round.evaluation.critique));for(const issue of round.blockers||[])d.append(make('p',issue));$('history').append(d);}
   $('appliedReferences').replaceChildren();for(const card of library.cards.filter(c=>(result.best.script.reference_ids||[]).includes(c.id)))$('appliedReferences').append(make('p',card.title+' · '+card.application,'muted small'));
     if(assessment.requested_changes)$('revisionStatus').textContent+=' | '+assessment.requested_changes.reason;
     $('textExport').href='/api/scripts/'+active+'/export';$('printExport').href='/api/scripts/'+active+'/export?format=print';
