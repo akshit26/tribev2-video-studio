@@ -1,4 +1,4 @@
-﻿import asyncio,json,tempfile,time,unittest
+import asyncio,json,tempfile,time,unittest
 from pathlib import Path
 from unittest.mock import patch
 import httpx,openai
@@ -46,7 +46,7 @@ class GemmaVideoTests(unittest.TestCase):
                             state=c.get('/api/jobs/'+sid+'/gemma-review').json()
                             if state['status'] in {'completed','failed'}:break
                             time.sleep(.01)
-                        self.assertEqual(state['status'],expected)
+                        self.assertEqual(state['status'],expected,state)
                         if expected=='failed':self.assertNotIn('dashboard',state);self.assertNotIn('result',state)
                         else:self.assertEqual(state['model'],gemma.NEMOTRON)
                 self.assertEqual(json.loads((directory/'report.json').read_text()),{'original':True})

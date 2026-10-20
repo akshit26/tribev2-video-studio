@@ -147,3 +147,18 @@ Video Review has a separate **Analyze video with Gemma** control on saved report
 
 
 Video-review provider update: the API video-review panel now defaults to `nvidia/nemotron-3.5-super-vl-120b-a12b`. Gemma 4 remains explicitly selectable. Live diagnostics reproduced NVIDIA HTTP 504 with `nvcf-status: errored` for a minimal Gemma request, independently of video uploads; increasing the local timeout cannot recover a terminally failed invocation. The replacement completed the saved MP4 through the app in 25.1 seconds. Results retain the actual model and original-video hash. The client now requests a 180-second NVCF hold window, polls valid HTTP 202 invocations by request ID without resubmitting, and distinguishes gateway errors from client timeouts. Polling is restricted to NVIDIA's fixed status host. Gemma thought tags, if returned, are discarded before parsing final JSON.
+
+
+Video Review now sends new MP4 uploads (maximum 20 MB) directly to NVIDIA
+Nemotron 3.5 Super VL. It does not load local speech, vision or neuroscience
+models. Configure `GEMMA_API_KEY` or `NVIDIA_API_KEY` in the ignored `.env` file.
+Requests run in the background with a 180-second deadline and expose genuine
+provider failures without fabricated scores. The dashboard shows hook, pacing,
+overall estimate and timestamped advice, with original-video playback and JSON
+export. This model assesses visuals and cannot hear audio; its scores are
+uncalibrated editorial estimates. Existing local reports remain readable.
+
+The fast API writer is the configured default; GPT-OSS/Gemma remains an explicit
+option. Rejected completions are removed from the retry cache, and repair calls
+receive the actual rejected draft and validation issues. A usable draft that
+still has quality issues is saved as needing review rather than lost or approved.

@@ -28,8 +28,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = ROOT / "results" / "studio"
-MAX_UPLOAD_BYTES = 250 * 1024 * 1024
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+VIDEO_EXTENSIONS = {".mp4"}
 PUBLIC_FILES = {
     "report.pdf", "report.json", "transcript.txt", "transcript.json",
     "subtitles.srt", "video_metrics.csv", "video_info.json", "charts.png", "evaluation.json", "ocr.json",
@@ -48,19 +48,19 @@ _logger = logging.getLogger("studio")
 
 
 def get_system_info() -> dict:
-    # Import lazily: serving the upload page does not load ML libraries.
-    from studio_pipeline import get_system_info as pipeline_system_info
-    return pipeline_system_info()
+    from studio_script_nvidia import nvidia_token
+    return {"review_backend":"nvidia", "review_configured":bool(nvidia_token('GEMMA_API_KEY') or nvidia_token()),
+            "max_budget_mb":4096, "default_budget_mb":4096, "cuda_ready":False, "gpu":{"available":False}}
+
 
 
 def run_analysis(**kwargs: Any) -> dict:
-    from studio_pipeline import run_analysis as pipeline_analysis
-    return pipeline_analysis(**kwargs)
+    from studio_remote_review import review_video
+    return review_video(kwargs['video'], kwargs['output'], kwargs['progress'])
 
 
 def resume_analysis(**kwargs: Any) -> dict:
-    from studio_pipeline import resume_analysis as pipeline_resume
-    return pipeline_resume(**kwargs)
+    return run_analysis(**kwargs)
 
 
 def _now() -> str:
@@ -132,8 +132,7 @@ def _process_job(job_id: str, video: Path, budget_mb: int, vision: bool, resume:
             _update_job(job_id, progress=max(1, min(99, int(percent))), stage=str(stage))
 
         analyze = resume_analysis if resume else run_analysis
-        report = analyze(video=video, output=_job_dir(job_id),
-                              budget_mb=budget_mb, vision=vision, progress=progress)
+        report = analyze(video=video, output=_job_dir(job_id), budget_mb=0, vision=True, progress=progress)
         info_path = _job_dir(job_id) / "upload_info.json"
         info = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
         if info.get("purpose") == "reference" and info.get("brand_id"):
@@ -179,7 +178,7 @@ async def local_requests_only(request: Request, call_next):
             except ValueError:
                 return JSONResponse({"detail": "Invalid content length."}, status_code=400)
             if too_large:
-                return JSONResponse({"detail": "Video upload limit is 250 MB."}, status_code=413)
+                return JSONResponse({"detail": "Video upload limit is 20 MB."}, status_code=413)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
@@ -200,7 +199,7 @@ def system_info():
     info = get_system_info()
     with _lock:
         return {**info, "busy": _active_job is not None, "active_job_id": _active_job,
-                "upload_limit_mb": 250, "budget_min_mb": 1024, "budget_max_mb": info.get("max_budget_mb", 4096)}
+                "upload_limit_mb": 20, "budget_min_mb": 1024, "budget_max_mb": info.get("max_budget_mb", 4096)}
 
 
 @app.get("/creative.js")
@@ -228,11 +227,11 @@ async def create_job(
     global _active_job
     from studio_review import LANGUAGES
     from studio_brands import snapshot, outcome_values, read_brand
-    maximum_budget=get_system_info()['max_budget_mb']
-    budget_mb=budget_mb or maximum_budget
-    if not 1024 <= budget_mb <= maximum_budget:
+    from studio_script_nvidia import nvidia_token
+    if not (nvidia_token('GEMMA_API_KEY') or nvidia_token()):
         await video.close()
-        raise HTTPException(422,'GPU target exceeds the detected maximum with desktop reserve.')
+        raise HTTPException(422, 'Set GEMMA_API_KEY or NVIDIA_API_KEY on the server.')
+    budget_mb = 0
     try:
         if purpose not in {"candidate", "reference"} or (purpose == "reference" and not brand_id):
             raise ValueError("Reference videos need a saved brand.")
@@ -243,18 +242,13 @@ async def create_job(
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         await video.close()
         raise HTTPException(422, str(exc)) from None
-    try:
-        require_memory()
-    except ResourcePressureError as exc:
-        await video.close()
-        raise HTTPException(503, str(exc)) from None
     if language not in LANGUAGES or platform not in {"general", "instagram", "youtube", "facebook"}:
         await video.close()
         raise HTTPException(422, "Choose a supported language and platform.")
     extension = Path(video.filename or "").suffix.lower()
     if extension not in VIDEO_EXTENSIONS:
         await video.close()
-        raise HTTPException(415, "Choose an MP4, MOV, M4V, WebM, AVI, or MKV video.")
+        raise HTTPException(415, "Choose an MP4 up to 20 MB for NVIDIA review.")
     job_id = uuid.uuid4().hex
     with _lock:
         busy = _active_job is not None
@@ -278,7 +272,7 @@ async def create_job(
             encoding="utf-8",
         )
         if brand_snapshot:
-            from studio_pipeline import _write_json
+            from studio_remote_review import write_json as _write_json
             _write_json(directory / "brand_context.json", brand_snapshot)
         destination = directory / ("input" + extension)
         size = 0
@@ -287,14 +281,14 @@ async def create_job(
             while chunk := await video.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, "Video upload limit is 250 MB.")
+                    raise HTTPException(413, "Video upload limit is 20 MB.")
                 uploaded.write(chunk)
                 digest.update(chunk)
         if not size:
             raise HTTPException(400, "The uploaded video is empty.")
         upload_info = json.loads((directory / "upload_info.json").read_text(encoding="utf-8"))
         upload_info["video_hash"] = digest.hexdigest()
-        from studio_pipeline import _write_json
+        from studio_remote_review import write_json as _write_json
         _write_json(directory / "upload_info.json", upload_info)
         if brand_snapshot:
             _write_json(directory / "brand_context.json", snapshot(RESULTS_DIR, brand_id, exclude_fingerprint=digest.hexdigest()))
@@ -319,10 +313,6 @@ async def create_job(
 def retry_job(job_id: str):
     global _active_job
     job = _load_job(job_id)
-    try:
-        require_memory()
-    except ResourcePressureError as exc:
-        raise HTTPException(503, str(exc)) from None
     directory = _job_dir(job_id)
     video = next((p for p in directory.glob("input.*") if p.suffix.lower() in VIDEO_EXTENSIONS), None)
     if video is None:
@@ -396,6 +386,15 @@ def get_report(job_id: str):
     if not report.is_file():
         raise HTTPException(404, "Report file not found.")
     return FileResponse(report, media_type="application/json")
+
+
+@app.get("/api/jobs/{job_id}/video")
+def get_review_video(job_id: str):
+    _load_job(job_id)
+    video = _job_dir(job_id) / 'input.mp4'
+    if not video.is_file():
+        raise HTTPException(404, 'Original MP4 not found.')
+    return FileResponse(video, media_type='video/mp4')
 
 
 @app.get("/api/jobs/{job_id}/files/{filename:path}")

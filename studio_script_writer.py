@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v18-single-block"
+WRITER_VERSION = "writer-v19-targeted-repairs"
 SYSTEM = "Act as an expert short-form video copywriter. Write a highly engaging, fast-paced 30-second video script based on the provided brief. Ensure the hook is under 12 words and immediately grabs attention without asking a question. Strip out all filler phrases like 'in this video,' 'let's dive in,' or 'without further ado.' Provide the entire script as a single, continuous block of text. You may include brief visual cues in brackets, like [Hold product to camera], inline with the dialogue. Output the final result exclusively in the `final_script` string field."
 SCRIPT_SCHEMA = {"type":"object","properties":{"final_script":{"type":"string","minLength":1,"maxLength":10000}},"required":["final_script"],"additionalProperties":False}
 
@@ -301,8 +301,8 @@ def brief_values(values):
         raise ValueError("Choose a supported content niche.")
     if result["persona"] not in {p["id"] for p in personas()}:
         raise ValueError("Choose a supported writer persona.")
-    if result["writer_backend"] not in {"local","huggingface","nvidia","team"}:
-        raise ValueError("Choose local, team, nvidia or huggingface writer backend.")
+    if result["writer_backend"] not in {"local","huggingface","nvidia","team","fast"}:
+        raise ValueError("Choose fast, local, team, nvidia or huggingface writer backend.")
     if result["local_model"] not in {"auto","qwen35","qwen3"}:
         raise ValueError("Choose auto, qwen35 or qwen3 local model.")
     from studio_script_hf import MODELS
@@ -416,10 +416,16 @@ def claim_issues(content, brief):
         stem = (adverse[1] or adverse[2]).lower()[:3]
         if stem not in experience:
             issues.append("Invented personal product result: the creator did not supply this reaction or dryness experience.")
-    if re.search(r"dandruff|scalp|skin|shampoo|moisturi[sz]|serum|sunscreen|cleanser|त्वचा|शैंपू|शैम्पू",brief.get("topic", "")+facts,re.I):
+    if brief.get("niche")=="skincare" or re.search(r"face\s*wash|dandruff|scalp|skin|shampoo|moisturi[sz]|serum|sunscreen|cleanser|त्वचा|शैंपू|शैम्पू",brief.get("topic", "")+facts,re.I):
         for smell in re.finditer(r"\bsmells? like ([\w-]+)",content,re.I):
             if smell[1].casefold() not in facts+' '+experience:
                 issues.append("Invented product scent. Only describe smells supplied in facts or creator notes.")
+        for pattern,evidence,label in [
+            (r"\bno harsh chemicals\b",r"\bno harsh chemicals\b",'no-harsh-chemicals claim'),
+            (r"\bgentle cleanse\b|\bnon[- ]drying\b|\bno tight(?:ness| feeling)\b",r"gentle|non[- ]drying|tight",'gentleness or non-drying claim'),
+            (r"\b(?:instant(?:ly)? cool|cooling touch|restores? moisture)\b",r"cool|moisture",'cooling or moisture-restoration claim')]:
+            if re.search(pattern,content,re.I) and not re.search(evidence,facts+' '+experience,re.I):
+                issues.append('Unsupported '+label+'. Use only verified facts or genuine creator experience.')
         dose = r"\bpea[-\u2011 ]si[sz](?:ed?|e)?|\b(?:two|three|\d+)\s+drops\b|मटर के दाने|दो बूंद|दो बूँद"
         if re.search(dose,content,re.I) and not re.search(dose,facts,re.I):
             issues.append("Application dose was not supplied. Do not invent a pea-sized amount or number of drops.")
@@ -756,16 +762,21 @@ def optimize(brief, complete, save, progress, selected_hook=None, max_rounds=MAX
     return result
 
 
-def validated_completion(complete, prompt, tokens, label, validate):
-    error = ""
+def validated_completion(complete,prompt,tokens,label,validate):
+    error=''
     for retry in range(2):
+        sent=prompt+error;stage=label+(' repair' if retry else '');raw=None
         try:
-            return validate(complete(prompt + error, tokens, label + (" repair" if retry else "")))
-        except (ValueError, KeyError, TypeError, AttributeError) as exc:
-            if "context is too long" in str(exc) or "exceeds the small GPU context" in str(exc):
-                raise
-            error = " Fix the previous invalid output: " + str(exc)[:300]
-    raise ValueError(label + " could not produce valid structured output: " + error)
+            raw=complete(sent,tokens,stage)
+            return validate(raw)
+        except (ValueError,KeyError,TypeError,AttributeError) as exc:
+            if hasattr(complete,'reject'):complete.reject(sent,tokens,stage)
+            if 'context is too long' in str(exc) or 'exceeds the small GPU context' in str(exc):raise
+            rejected=json.dumps(raw,ensure_ascii=False)[:4000] if raw is not None else 'No usable JSON was returned.'
+            error=(' Fix the previous invalid output: '+str(exc)[:1000]+
+                   ' Revise the rejected JSON below against ALL brief constraints; do not invent a new draft or new facts. '
+                   'REJECTED OUTPUT: '+rejected)
+    raise ValueError(label+' could not produce valid structured output: '+error[:1100])
 
 
 def write_hooks(brief, complete, save=None, progress=None):
@@ -884,11 +895,18 @@ def write_hooks(brief, complete, save=None, progress=None):
 
 def write_final_script(request,complete,save,progress,save_draft=None):
     brief=request['brief']
-    context=compact_brief(brief)
+    context={key:brief.get(key,'') for key in ('topic','facts','audience','language','content_mode','content_format','persona','creator_experience','creative_notes','objective','cta')}
+    context['learned_mechanisms']=brief.get('learned_mechanisms',[])
     prompt=('Return exactly {"final_script":"one continuous block of script text"}. '
         'No title, scenes, timestamps, columns or extra JSON fields. '
         'Use the requested language and persona. Natural product integration; '
         'never invent claims, testing history, sensory observations or usage directions. '
+        'For organic content, use a specific relatable situation or opinion, not a benefits pitch. '
+        'When facts are only a promotional request, only product identity is verified. '
+        'Do not promise cooling, hydration, gentleness, no tightness, results, pure ingredients or before/after changes without explicit proof. '
+        'Use the exact supplied brand spelling. Prefer no bracketed cues unless explicitly requested; write spoken words. '
+        'With sparse product facts, develop a relatable shopping or routine dilemma rather than describing product benefits. '
+        'Write a short opening statement and 3-4 developed sentences, targeting 70 spoken words. '
         'Write roughly 60-80 spoken words for 30 seconds; bracketed cues do not count. '
         'The opening sentence must be fewer than 12 words, with no question. '
         'No "in this video", "let\'s dive in", or "without further ado". '
@@ -898,28 +916,37 @@ def write_final_script(request,complete,save,progress,save_draft=None):
     if request.get('previous_script'):
         prompt+=' CURRENT SCRIPT: '+json.dumps(script_text(request['previous_script']),ensure_ascii=False)
         prompt+=' REQUESTED CHANGES: '+json.dumps(request.get('revision_notes') or 'Improve the script while preserving its core idea.',ensure_ascii=False)
+    attempts=[]
     def check(raw):
         result=validate_final_script(raw)
         spoken=re.sub(r'\[[^\]]*\]','',result['final_script']).strip()
         opening=re.split(r'[.!?\u0964\uff1f\n]',spoken,maxsplit=1)[0]
+        issues=[]
         if any(mark in spoken[:len(opening)+1] for mark in ('?', '\uff1f')):
-            raise ValueError('The opening must grab attention without a question.')
-        if len(opening.split())>=12:raise ValueError('Make the first sentence fewer than 12 words.')
+            issues.append('The opening must grab attention without a question.')
+        if len(opening.split())>=12:issues.append('Make the first sentence fewer than 12 words.')
         if re.search(r"\b(in this video|let['\u2019]s dive in|without further ado)\b",spoken,re.I):
-            raise ValueError('Remove filler phrases.')
+            issues.append('Remove filler phrases.')
         if not 55<=len(spoken.split())<=90:
-            raise ValueError('Develop one complete 30-second script in 55-90 spoken words, without filler.')
-        claims=claim_issues(spoken,brief)
-        if claims:raise ValueError('; '.join(claims[:2]))
+            issues.append(f'This draft has {len(spoken.split())} spoken words. Write 55-90 words, targeting 70; bracket cues do not count.')
+        issues.extend(claim_issues(spoken,brief)[:3])
+        attempts.append((result,issues))
+        if issues:raise ValueError('; '.join(issues))
         return result
     progress(.05,'Writing your script')
-    candidate=validated_completion(complete,prompt,1800,'Draft 1',check)
+    issues=[]
+    try:candidate=validated_completion(complete,prompt,1800,'Draft 1',check)
+    except (ValueError,RuntimeError) as exc:
+        if not attempts:raise
+        candidate,issues=min(attempts,key=lambda row:len(row[1]))
+        if isinstance(exc,RuntimeError):issues=issues+['Repair unavailable: '+str(exc)[:300]]
     if save_draft:save_draft(candidate)
     # A single generated text block is not an independently calibrated score.
-    assessment={'score':None,'criteria':[],'blockers':[],'unsupported_claims':[],
+    assessment={'score':None,'criteria':[],'blockers':issues,'unsupported_claims':[],
                 'method':'Single-block script; no automatic editorial score was requested.'}
     result={'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},
-            'history':[],'target_met':False,'stop_reason':'single_block_complete','selected_hook':None,
+            'history':[],'target_met':False,'stop_reason':'needs_review' if issues else 'single_block_complete',
+            'quality_status':'needs_review' if issues else 'ready','selected_hook':None,
             'revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
     save(result);progress(1,'Script ready')
     return result

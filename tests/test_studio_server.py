@@ -53,7 +53,7 @@ class StudioServerTests(unittest.TestCase):
     def test_complete_report_downloads_and_private_input(self):
         def analyze(video, output, budget_mb, vision, progress):
             self.assertEqual(video.read_bytes(), b"test video")
-            self.assertEqual(budget_mb, 5632)
+            self.assertEqual(budget_mb, 0)
             self.assertTrue(vision)
             self.assertEqual(json.loads((output / "upload_info.json").read_text())["original_name"], "example.mp4")
             progress(45, "Testing analysis")
@@ -115,8 +115,7 @@ class StudioServerTests(unittest.TestCase):
         with patch.object(server, "run_analysis") as mock:
             self.assertEqual(self.upload("script.py").status_code, 415)
             self.assertEqual(self.upload(content=b"").status_code, 400)
-            self.assertEqual(self.upload(budget_mb="1023").status_code, 422)
-            self.assertEqual(self.upload(budget_mb="8192").status_code, 422)
+            self.assertEqual(self.upload("example.mov").status_code, 415)
             self.assertEqual(self.upload(budget_mb="262145").status_code, 422)
             with patch.object(server, "MAX_UPLOAD_BYTES", 4):
                 self.assertEqual(self.upload(content=b"12345").status_code, 413)
@@ -154,14 +153,11 @@ class StudioServerTests(unittest.TestCase):
             info = self.client.get("/api/system").json()
         self.assertTrue(info["cuda_available"])
         self.assertFalse(info["busy"])
-        self.assertEqual(info["upload_limit_mb"], 250)
+        self.assertEqual(info["upload_limit_mb"], 20)
 
-    def test_low_ram_rejects_upload_without_starting_analysis(self):
-        with patch.object(server, "require_memory", side_effect=server.ResourcePressureError("Low RAM")), \
-                patch.object(server, "run_analysis") as analyze:
-            response = self.upload()
-        self.assertEqual(response.status_code, 503)
-        self.assertIsNone(server._active_job)
+    def test_missing_key_rejects_upload_without_starting_analysis(self):
+        with patch('studio_script_nvidia.nvidia_token', return_value=''), patch.object(server, 'run_analysis') as analyze:
+            self.assertEqual(self.upload().status_code, 422)
         analyze.assert_not_called()
 
     def test_failed_job_can_resume_saved_upload_without_new_analysis(self):

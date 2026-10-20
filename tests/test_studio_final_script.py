@@ -58,7 +58,9 @@ class FinalScriptAuditTests(unittest.TestCase):
         self.assertIn('final_script',self.run_text(content,'Hindi')['best']['script'])
     def test_curly_apostrophe_filler_and_fullwidth_question_are_rejected(self):
         for content in ['Let\u2019s dive in. '+TEXT,'Why\uff1f '+TEXT]:
-            with self.assertRaises(ValueError):self.run_text(content)
+            result=self.run_text(content)
+            self.assertEqual(result['quality_status'],'needs_review')
+            self.assertTrue(result['best']['assessment']['blockers'])
     def test_corrupt_saved_metadata_cannot_break_saved_work_listing(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
@@ -70,3 +72,43 @@ class FinalScriptAuditTests(unittest.TestCase):
                     (path/'state.json').write_text(json.dumps(invalid))
                     self.assertEqual(client.get('/api/scripts/'+sid).status_code,404)
                     self.assertEqual(client.get('/api/scripts').status_code,200)
+
+class RepairLifecycleTests(unittest.TestCase):
+    def test_repair_contains_rejected_text_and_does_not_reuse_bad_cache(self):
+        from unittest.mock import Mock
+        from studio_script_writer import validated_completion
+        complete=Mock(side_effect=[{'final_script':'Rejected opening?'},{'final_script':'A corrected opening.'}])
+        complete.reject=Mock()
+        def check(raw):
+            if '?' in raw['final_script']:raise ValueError('No opening question.')
+            return raw
+        result=validated_completion(complete,'Write a script.',1200,'Draft',check)
+        self.assertEqual(result['final_script'],'A corrected opening.')
+        self.assertIn('Rejected opening?',complete.call_args_list[1].args[0])
+        complete.reject.assert_called_once_with('Write a script.',1200,'Draft')
+    def test_failed_quality_check_keeps_a_flagged_editable_draft(self):
+        request={'brief':{'topic':'Notebook','facts':'80 blank pages','duration':30,'language':'English'}}
+        saved=[]
+        result=write_final_script(request,lambda *args:{'final_script':'A short opening.'},saved.append,lambda *args:None)
+        self.assertEqual(result['quality_status'],'needs_review')
+        self.assertIsNone(result['best']['assessment']['score'])
+        self.assertTrue(result['best']['assessment']['blockers'])
+        self.assertEqual(result['final_script'],'A short opening.')
+    def test_facewash_claims_are_checked_without_the_word_skin_in_brief(self):
+        from studio_script_writer import claim_issues
+        brief={'topic':'Neem facewash','facts':'Promote our Himalya neem facewash','niche':'skincare'}
+        self.assertTrue(claim_issues('No harsh chemicals, just a gentle cleanse.',brief))
+    def test_stopped_gpt_job_can_explicitly_retry_with_fast_provider(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        import studio_server as server
+        from studio_script_writer import brief_values
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RESULTS_DIR',Path(tmp)),patch.object(server,'_active_job',None),patch.object(server._executor,'submit'),patch('studio_script_fast.ready',return_value=True):
+            sid='c'*32;p=Path(tmp)/'_scripts'/sid;p.mkdir(parents=True)
+            b=brief_values({'topic':'Notebook','facts':'80 blank pages','writer_backend':'team'})
+            (p/'state.json').write_text(json.dumps({'id':sid,'status':'failed','stage':'Stopped','brief':b}))
+            (p/'review_input.json').write_text(json.dumps({'script_request':{'brief':b,'mode':'script'}}))
+            with TestClient(server.app,base_url='http://127.0.0.1:8765') as client:
+                response=client.post('/api/scripts/'+sid+'/retry',json={'writer_backend':'fast'})
+                self.assertEqual(response.status_code,202,response.text)
+                self.assertEqual(response.json()['brief']['writer_backend'],'fast')

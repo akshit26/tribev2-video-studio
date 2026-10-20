@@ -56,7 +56,7 @@ def install(server):
             return state
     def run(job_id,video,model):
         nonlocal active
-        from studio_pipeline import _write_json
+        from studio_remote_review import write_json as _write_json
         from studio_gemma_video import analyze_virality,dashboard_state,MODEL
         start=time.time();path=server._job_dir(job_id)/'gemma_review.json'
         state={'status':'running','started_at':start,'model':model}
@@ -84,7 +84,7 @@ def install(server):
     @server.app.post('/api/jobs/{job_id}/gemma-review',status_code=202)
     def create_review(job_id: str,model: str='nvidia/nemotron-3.5-super-vl-120b-a12b'):
         nonlocal active
-        from studio_pipeline import _write_json
+        from studio_remote_review import write_json as _write_json
         from studio_script_nvidia import nvidia_token
         from studio_gemma_video import MAX_VIDEO_BYTES,MODELS
         if model not in MODELS:raise HTTPException(422,'Choose an available video review model.')

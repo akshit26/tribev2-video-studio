@@ -21,5 +21,13 @@ class CompletionCache:
         self.parts[label] = part
         self.variants.setdefault(label, {})[prompt_hash] = copy.deepcopy(part)
 
+    def reject(self,label,prompt_hash):
+        variants=self.variants.get(label,{})
+        variants.pop(prompt_hash,None)
+        if not variants:self.variants.pop(label,None)
+        if self.parts.get(label,{}).get('prompt_hash')==prompt_hash:
+            self.parts.pop(label,None)
+            if variants:self.parts[label]=copy.deepcopy(next(reversed(variants.values())))
+
     def snapshot(self):
         return {"signature": self.signature, "parts": self.parts, "variants": self.variants}

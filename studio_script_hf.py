@@ -45,8 +45,10 @@ def configuration():
     nvidia_ready = bool(nvidia_token())
     from studio_script_team import ready
     team_ready=ready()
-    return {"default_backend": "team" if team_ready else "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
-            "team_configured":team_ready,
+    from studio_script_fast import ready as fast_ready
+    fast_configured=fast_ready()
+    return {"default_backend": "fast" if fast_configured else "team" if team_ready else "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
+            "team_configured":team_ready,"fast_configured":fast_configured,
             "nvidia_token_configured": nvidia_ready, "nvidia_model": MODEL,
             "models": [{"id": key, "name": name} for key, name in MODELS.items()],
             "local_models": local_configuration(),
@@ -55,6 +57,9 @@ def configuration():
 
 
 def validate_configuration(brief):
+    if brief.get('writer_backend')=='fast':
+        from studio_script_fast import validate_configuration as validate_fast
+        return validate_fast(brief)
     if brief.get('writer_backend')=='team':
         from studio_script_team import validate_configuration as validate_team
         return validate_team(brief)
@@ -187,6 +192,14 @@ def run_hf_writer(output, request, progress, provider=None):
         _write_json(path, cache.snapshot())
         _write_json(output / (prefix + "_writer_usage.json"), stats)
         return result
+
+    def reject(prompt,tokens,label):
+        if provider and hasattr(provider,'prepare_prompt'):
+            prompt=provider.prepare_prompt(prompt,label,request)
+        prompt_hash=hashlib.sha256((prompt+str(tokens)).encode()).hexdigest()
+        cache.reject(label,prompt_hash)
+        _write_json(path,cache.snapshot())
+    complete.reject=reject
 
     try:
         run_writer(output, complete, report)

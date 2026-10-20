@@ -19,7 +19,7 @@ function updateContentMode(){
   $('contentModeHint').textContent=hints[$('contentMode').value];
 }
 $('contentMode').addEventListener('change',updateContentMode);
-function updateEngine(){$('teamSettings').hidden=$('writerBackend').value!=='team';const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=$('writerBackend').value!=='local';$('nvidiaSettings').hidden=$('writerBackend').value!=='nvidia';$('nvidiaTokenStatus').textContent=engineConfig?.nvidia_token_configured?'NVIDIA key configured on server.':'Set NVIDIA_API_KEY in the server environment or .env.';const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
+function updateEngine(){$('fastSettings').hidden=$('writerBackend').value!=='fast';$('teamSettings').hidden=$('writerBackend').value!=='team';const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=$('writerBackend').value!=='local';$('nvidiaSettings').hidden=$('writerBackend').value!=='nvidia';$('nvidiaTokenStatus').textContent=engineConfig?.nvidia_token_configured?'NVIDIA key configured on server.':'Set NVIDIA_API_KEY in the server environment or .env.';const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
 $('writerBackend').addEventListener('change',updateEngine);
 function updatePersona(){const p=personaCatalog.find(p=>p.id===$('personaSelect').value);if($('personaHint'))$('personaHint').textContent=p?p.direction+' Best for: '+p.best_for:'';}
 $('personaSelect').addEventListener('change',updatePersona);
@@ -49,7 +49,9 @@ async function poll(){
     if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
     $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
     $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
-    $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&['needs_review','unavailable'].includes(job.hook_options?.review_status));
+    const fastRetry=job.brief?.writer_backend==='team'&&engineConfig?.fast_configured;
+    $('retryJob').dataset.fastRetry=fastRetry?'true':'false';if(fastRetry){$('retryJob').textContent='Retry with fast writer';if(job.status==='failed'){$('writerBackend').value='fast';updateEngine();}}
+    $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&(['needs_review','unavailable'].includes(job.hook_options?.review_status)||job.result?.quality_status==='needs_review'));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
       renderHooks(job.hook_options.hooks,job.hook_options);shownHooks=JSON.stringify(job.hook_options);
     }
@@ -112,7 +114,7 @@ function renderResult(result){
   renderScript(result.best.script);
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
-  if(assessment.score===null)line.replaceChildren(make('p','Script ready. Copy, edit or suggest changes below.'));
+  if(assessment.score===null)line.replaceChildren(make('p',assessment.blockers?.length?'Draft saved. Revise the flagged issues before use.':'Script ready. Copy, edit or suggest changes below.'));
   $('score').replaceChildren(line);for(const issue of assessment.blockers||[])$('score').append(make('p','Needs revision: '+issue,'status')); $('editStatus').textContent='Best generated draft shown. Edits will need a fresh assessment.';
   $('history').replaceChildren();
   for(const round of result.history){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScript(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
@@ -125,7 +127,7 @@ async function loadSaved(){const rows=await api('/api/scripts');$('savedWork').r
 async function loadExperiments(){const rows=await api('/api/scripts/experiments');$('experiments').replaceChildren();for(const row of rows.reverse()){const d=make('details');d.append(make('summary',row.title+' · '+row.platform),make('p',row.hypothesis),make('p',row.observations),make('p',row.evidence_type,'muted small'));$('experiments').append(d);}}
 $('briefForm').onsubmit=e=>{e.preventDefault();start('script');};
 $('directButton').onclick=()=>start('script');
-$('retryJob').onclick=async()=>{try{if(dirty&&!confirm('Retry generation? Save or copy your edits first.'))return;lock(true);const localRetry=$('retryJob').dataset.localRetry==='true';await api('/api/scripts/'+active+'/retry',{method:'POST',body:JSON.stringify(localRetry?{writer_backend:'local',local_model:$('localModel').value}:{})});if(localRetry){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}$('retryJob').hidden=true;shownHooks='';poll();}catch(e){status(e.message,true);lock(false);}};
+$('retryJob').onclick=async()=>{try{if(dirty&&!confirm('Retry generation? Save or copy your edits first.'))return;lock(true);const localRetry=$('retryJob').dataset.localRetry==='true',fastRetry=$('retryJob').dataset.fastRetry==='true';await api('/api/scripts/'+active+'/retry',{method:'POST',body:JSON.stringify(fastRetry?{writer_backend:'fast'}:localRetry?{writer_backend:'local',local_model:$('localModel').value}:{})});if(fastRetry){$('writerBackend').value='fast';updateEngine();}if(localRetry){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}$('retryJob').hidden=true;shownHooks='';poll();}catch(e){status(e.message,true);lock(false);}};
 $('revisionForm').onsubmit=async e=>{
   e.preventDefault();if(busy||!current?.result||!$('revisionForm').reportValidity())return;
   const notes=$('revisionNotes').value.trim();if(!notes){status('Describe the changes you want.',true);return;}

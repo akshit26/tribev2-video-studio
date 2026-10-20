@@ -33,3 +33,11 @@ Live diagnostics reproduced NVIDIA HTTP 504 with `nvcf-status: errored` for a ti
 API Video Review now defaults to `nvidia/nemotron-3.5-super-vl-120b-a12b`, with Gemma 4 retained as an explicit manual-retry choice. A direct MP4 test completed successfully, and the complete app flow then processed the saved 33.8-second MP4 in 25.1 seconds. The main server's saved result and browser dashboard both identify Nemotron accurately. Scores are uncalibrated visual editing estimates; the model explicitly noted that audio was unavailable.
 
 The client sets NVIDIA's gateway hold window to 180 seconds, polls valid HTTP 202 request IDs without resubmission, reports provider 504/errored status distinctly from a client timeout, and discards tagged private reasoning before parsing JSON. Four regression tests cover the gateway error, request-ID validation, reasoning exclusion, and accepted-request polling. The full suite now passes 294 tests; writer, video-review and live saved-result browser checks pass.
+
+
+Latest API review migration: new uploads call NVIDIA directly, bypass local model
+execution and GPU admission checks. MP4 limit is 20 MB. Automated suite: 301 tests
+passed. Writer and optional review browser regressions passed; main remote
+report dashboard passed desktop/mobile checks with no JavaScript errors.
+Live upload reached NVIDIA but the first invocation returned a connection error;
+the retry completed successfully in 171.3 seconds with hook 55, pacing 70 and overall 40, plus timestamped advice. No scores or verdict were assigned on the failed invocation.

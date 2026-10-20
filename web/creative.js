@@ -1,5 +1,24 @@
 "use strict";
 window.renderCreative = function(report,id) {
+  if(report.backend==='nvidia'){
+    const root=document.getElementById('creative');
+    for(const child of root.children)child.hidden=true;
+    let panel=document.getElementById('remoteReview');
+    if(!panel){panel=document.createElement('section');panel.id='remoteReview';panel.className='panel summary-panel';root.append(panel);}
+    panel.hidden=false;panel.replaceChildren();
+    const add=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;panel.append(node);};
+    add('h2',report.dashboard.status+' - creative readiness');
+    add('p','Reviewed by '+report.model);
+    add('h3','Hook: '+report.result.hook_score+'/100 | Pacing: '+report.result.pacing_score+'/100 | Overall: '+report.result.overall_probability+'/100');
+    add('p',report.result.timestamped_revision_advice);
+    add('p',report.dashboard.policy);
+    add('p','Visual assessment only. This model cannot hear audio. Scores are uncalibrated editorial estimates.');
+    const video=document.createElement('video');video.controls=true;video.preload='metadata';video.style.width='100%';video.src='/api/jobs/'+encodeURIComponent(id)+'/video';panel.append(video);
+    const download=document.createElement('a');download.textContent='Download review JSON';download.href='/api/jobs/'+encodeURIComponent(id)+'/files/report.json';panel.append(download);
+    return;
+  }
+  const remote=document.getElementById('remoteReview');if(remote)remote.remove();
+  for(const child of document.getElementById('creative').children)child.hidden=false;
   if(window.renderGemmaVideoReview)window.renderGemmaVideoReview(id);
   const byId=id=>document.getElementById(id);
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n;};

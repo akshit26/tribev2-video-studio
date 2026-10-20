@@ -89,7 +89,7 @@ def install(server):
     def process(script_id, request):
         path = directory(script_id)
         begun = time.monotonic()
-        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia", "team"} else "Starting local writer", "progress": 1, "started_at": time.time(), "brief": request["brief"]}
+        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia", "team", "fast"} else "Starting local writer", "progress": 1, "started_at": time.time(), "brief": request["brief"]}
         try:
             persist(path, state)
             def progress(percent, stage):
@@ -101,6 +101,9 @@ def install(server):
             elif request["brief"].get("writer_backend") == "nvidia":
                 from studio_script_nvidia import run_nvidia_writer
                 run_nvidia_writer(path, request, progress)
+            elif request['brief'].get('writer_backend')=='fast':
+                from studio_script_fast import run_fast_writer
+                run_fast_writer(path,request,progress)
             elif request['brief'].get('writer_backend')=='team':
                 from studio_script_team import run_team_writer
                 run_team_writer(path,request,progress)
@@ -111,6 +114,9 @@ def install(server):
                 if not ok:
                     raise RuntimeError(reason)
             state.update(status="completed", progress=100, stage="Script ready" if (path / "script_result.json").exists() else "Hook options ready")
+            if (path / 'script_result.json').exists():
+                saved=json.loads((path / 'script_result.json').read_text(encoding='utf-8'))
+                if saved.get('quality_status')=='needs_review':state.update(stage='Draft saved; revise the flagged issues',warning='This draft has not passed the writing constraints.')
             if request["mode"] == "hooks" and not (path / "script_result.json").exists():
                 result = json.loads((path / "hooks.json").read_text(encoding="utf-8")) if (path / "hooks.json").exists() else {}
                 if result.get("review_status") in {"needs_review", "unavailable"}:
@@ -364,7 +370,7 @@ def install(server):
             state = read(script_id)
             if server._active_job is not None:
                 raise HTTPException(409, "Studio is busy. Wait for the active job to finish.")
-            flagged = state.get("hook_options", {}).get("review_status") in {"needs_review", "unavailable"}
+            flagged = state.get("hook_options", {}).get("review_status") in {"needs_review", "unavailable"} or state.get("result",{}).get("quality_status")=="needs_review"
             if state["status"] != "failed" and not (state["status"] == "completed" and flagged):
                 raise HTTPException(409, "Only stopped jobs or hooks needing review can be retried.")
             try:
@@ -380,6 +386,12 @@ def install(server):
                     raise HTTPException(422,str(exc)) from None
                 request["brief"].update(writer_backend="local",local_model=choice,hf_credits_allowed=False)
                 _write_json(path / "review_input.json", {"script_request":request})
+            elif values and values.get('writer_backend')=='fast':
+                from studio_script_fast import validate_configuration
+                try:validate_configuration(request['brief'])
+                except ValueError as exc:raise HTTPException(422,str(exc)) from None
+                request['brief'].update(writer_backend='fast',hf_credits_allowed=False)
+                _write_json(path/'review_input.json',{'script_request':request})
             elif values and values.get("writer_backend") is not None:
                 raise HTTPException(422,"Retry can switch to local only. Start a new brief to change hosted settings.")
             if request["brief"].get("writer_backend", "local") == "local":

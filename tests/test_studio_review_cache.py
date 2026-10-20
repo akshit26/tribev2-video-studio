@@ -25,3 +25,14 @@ class CompletionCacheTests(unittest.TestCase):
         cache.remember("rating", "prompt", {"source_ids": ["S1"]})
         cache.get("rating", "prompt")["result"]["source_ids"].append("invented")
         self.assertEqual(cache.get("rating", "prompt")["result"]["source_ids"], ["S1"])
+
+class RejectedCompletionTests(unittest.TestCase):
+    def test_rejected_variant_is_removed_without_erasing_valid_work(self):
+        from studio_review_cache import CompletionCache
+        cache=CompletionCache({},'test')
+        cache.remember('Draft','good',{'final_script':'Valid saved words.'})
+        cache.remember('Draft','bad',{'final_script':'Invalid words?'})
+        cache.reject('Draft','bad')
+        restored=CompletionCache(cache.snapshot(),'test')
+        self.assertIsNone(restored.get('Draft','bad'))
+        self.assertEqual(restored.get('Draft','good')['result']['final_script'],'Valid saved words.')
