@@ -31,6 +31,8 @@ def install(server):
                 state.update(status="failed", stage="Interrupted by server restart", error="Saved drafts are preserved. Start a new revision to continue.")
                 from studio_pipeline import _write_json
                 _write_json(path / "state.json", state)
+        if state['status']=='running' and isinstance(state.get('started_at'),(int,float)):
+            state['elapsed_seconds']=round(max(0,time.time()-state['started_at']),1)
         for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result"), ("tribe_rating.json", "tribe_recording_rating")]:
             try:
                 state[key] = json.loads((path / name).read_text(encoding="utf-8"))
@@ -77,7 +79,7 @@ def install(server):
     def process(script_id, request):
         path = directory(script_id)
         begun = time.monotonic()
-        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia", "team"} else "Starting local writer", "progress": 1, "brief": request["brief"]}
+        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia", "team"} else "Starting local writer", "progress": 1, "started_at": time.time(), "brief": request["brief"]}
         try:
             persist(path, state)
             def progress(percent, stage):

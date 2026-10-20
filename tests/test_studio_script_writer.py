@@ -428,6 +428,18 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(saved[-1]['review_status'],'unavailable')
         self.assertTrue(saved[-1]['warning'])
 
+    def test_hook_provider_timeout_keeps_completed_hooks_available(self):
+        from studio_script_hf import HostedWriterError
+        hook={'angle':'demo','spoken':'Open a blank page.','payoff':'Write an idea.'}
+        saved=[]
+        def complete(prompt,tokens,label):
+            if label.startswith('Hook critique'):raise HostedWriterError('Gemma timed out')
+            return {'hooks':[hook]*5}
+        result=writer.write_hooks(brief(),complete,lambda row:saved.append(copy.deepcopy(row)))
+        self.assertEqual(len(result),5)
+        self.assertEqual(saved[-1]['review_status'],'unavailable')
+        self.assertIn('Gemma timed out',saved[-1]['review_error'])
+
     def test_unresolved_hooks_saved_with_explicit_flags(self):
         hook={'angle':'demo','spoken':'Open a blank page.','visual':'Open notebook.','overlay':'One idea','payoff':'Write an idea.'}
         saved=[]

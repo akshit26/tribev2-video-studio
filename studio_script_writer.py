@@ -861,7 +861,7 @@ def write_hooks(brief, complete, save=None, progress=None):
             'Treat supplied benefit statements as brief claims, not independent proof. Flag invented guarantees or before/after proof. '
             'FACTS: ' + json.dumps(compact_brief(brief), ensure_ascii=False) +
             ' HOOKS: ' + json.dumps(hooks, ensure_ascii=False), 600, f"Hook critique {attempt+1}", validate_hook_issues)
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             save({"hooks": hooks, "review_status": "unavailable", "issues": initial_issues,
                   "warning": "Hooks saved. Automated review could not finish; check claims and logic before use.", "review_error": str(exc)[:600]})
             return hooks

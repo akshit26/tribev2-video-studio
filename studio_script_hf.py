@@ -133,6 +133,8 @@ def run_hf_writer(output, request, progress, provider=None):
         progress(1 + 98*value, stage)
 
     def complete(prompt, tokens, label):
+        if provider and hasattr(provider,'prepare_prompt'):
+            prompt=provider.prepare_prompt(prompt,label,request)
         prompt_hash = hashlib.sha256((prompt + str(tokens)).encode()).hexdigest()
         cached = cache.get(label, prompt_hash)
         if cached:

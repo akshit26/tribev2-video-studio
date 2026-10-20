@@ -43,3 +43,12 @@ class TeamTransportTests(unittest.TestCase):
     def test_queued_request_is_not_parsed_as_corrupt_json(self):
         def handler(request):return httpx.Response(202,json={'requestId':'test'})
         with self.assertRaisesRegex(team.HostedWriterError,'queued or incomplete'):self.invoke(handler)
+
+class CompactHookTests(unittest.TestCase):
+    def test_prompt_keeps_facts_language_and_does_not_replace_repairs(self):
+        from studio_script_writer import brief_values
+        request={'brief':brief_values({'topic':'Notebook','facts':'80 blank pages.','language':'Hindi','writer_backend':'team'})}
+        compact=team.prepare_prompt('Repeated instructions'*500,'Hook options 1',request)
+        self.assertIn('80 blank pages.',compact);self.assertIn('Hindi',compact)
+        self.assertLess(len(compact),5000)
+        self.assertEqual(team.prepare_prompt('Repair exactly one word','Hook options 1 repair',request),'Repair exactly one word')
