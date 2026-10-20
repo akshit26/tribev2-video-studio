@@ -21,7 +21,7 @@ def main():
         row={'id':source['id'],'url':url,'retrieved_at':datetime.now(timezone.utc).isoformat()}
         path=folder/(source['id']+'.html')
         try:
-            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; TribeReferenceReader/1.0)'})
+            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; CreatorReferenceReader/1.0)'})
             with urllib.request.urlopen(req,timeout=25) as response:
                 data=response.read(4_000_001)
                 if len(data)>4_000_000:

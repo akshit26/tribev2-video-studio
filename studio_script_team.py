@@ -1,4 +1,4 @@
-"""GPT-OSS drafts with a separate NVIDIA scoring gate; editorial scores are not TRIBE."""
+"""GPT-OSS drafts with a separate NVIDIA scoring gate; with independent editorial scoring."""
 import json
 import sys
 from studio_script_nvidia import nvidia_token as credential
@@ -145,8 +145,6 @@ def run_team_writer(output,request,progress):
         data=json.loads(path.read_text(encoding='utf-8'))
         from studio_evaluation import draft_scoring_model
         data['pipeline']={'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'API pre-scoring gate; one rewrite maximum.'}
-        from studio_script_tribe import draft_status
-        data['tribe_v2']=draft_status()
         try:
             from studio_script_performance import validate_dataset,predict
             dataset=validate_dataset(json.loads((output.parent/'performance_data.json').read_text(encoding='utf-8')))

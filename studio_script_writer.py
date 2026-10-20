@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v25-full-reasoning"
-SYSTEM = "Act as an expert direct-response video copywriter. Return exclusively a JSON object with one final_script string containing the complete continuous script. Follow the supplied duration rules. Do NOT invent a first-person product routine or personal creator experience. Do NOT make unsupported medical claims, guarantees, or touch-free promises. Strip out filler phrases like in this video or let's dive in."
+WRITER_VERSION = "writer-v26-creator-library"
+SYSTEM = "Act as an expert influencer and creator-led video copywriter. Build an audience-worthy idea before integrating a product: a recognizable frustration, surprising observation, playful reversal, useful discovery or satisfying story. Give the viewer a reason to keep watching and a specific reason to share with a friend. Choose an emotion and resolve the opening promise. Speak naturally in the requested language, including idiomatic Hindi or Hinglish when requested. Work from the supplied creator context; never fabricate lived experience. Integrate the brand through its relevant role in the idea, without reciting a feature list or sounding like a brand announcer. Let humor and opinions be specific to the niche. Preserve the required duration and CTA, making the single action conversational and grounded in the brief. Return exclusively a JSON object with one final_script string containing the complete continuous script. Follow the supplied duration rules. Do NOT invent a first-person product routine or personal creator experience. Do NOT make unsupported medical claims, guarantees, or touch-free promises. Strip out filler phrases like in this video or let's dive in."
 FORMATS = {
     'short': (35,60,30,"Write a 35-60 word script. Start immediately with a visual pattern interrupt hook under 12 words. Do NOT ask a question. Cut all context and deliver exactly one single narrative beat or product demo. Place a direct purchase CTA at the end."),
     'mid': (140,170,60,"Write a 140-170 word script. Structure: 5s Hook, 45s Body, 10s CTA. Insert a bracketed visual cue (e.g., [B-ROLL: fast zoom]) every 3 sentences for pacing. Ensure every sentence introduces new information."),
@@ -215,15 +215,15 @@ def compact_brief(brief):
 
 
 def reference_cards(brief):
-    ids = {"stick", "everybody-writes", "hook-payoff", "shootable"}
+    ids = {"stick", "everybody-writes", "hook-payoff", "creator-emotion", "creator-share", "creator-brand-bridge", "creator-payoff"}
     platform = brief.get("platform", "").lower()
     if brief.get("content_mode", "organic") == "paid_ad":
-        ids.add("tiktok" if "tiktok" in platform else "abcd")
+        ids.add("tiktok" if "tiktok" in platform else "creator-brand-bridge")
     else:
         ids.update({"contagious", "clear"})
     if brief.get("objective", "").lower().find("share") >= 0:
         ids.add("contagious")
-    priority = (["tiktok" if "tiktok" in platform else "abcd"]
+    priority = ["creator-emotion", "creator-brand-bridge", "creator-share", "creator-payoff"] + (["tiktok" if "tiktok" in platform else "creator-brand-bridge"]
                 if brief.get("content_mode", "organic") == "paid_ad" else [])
     if brief.get("production_style", "solo_simple") == "solo_simple":
         priority += ["solo-simple", "solo-rant"]
@@ -234,9 +234,12 @@ def reference_cards(brief):
         priority.append(format_card)
     if creative_territory(brief)["category"] in {"Hair/scalp care", "Skin care"}:
         priority.append("beauty-storytime")
+    priority += ["creator-niches", "creator-language"]
+    if "youtube" in platform or "shorts" in platform:
+        priority.append("youtube-creator-shorts")
     cards = {c["id"]:c for c in library()["cards"]}
     ordered = list(dict.fromkeys(priority + [c["id"] for c in cards.values() if c["id"] in ids]))
-    return [{"id": key, "apply":cards[key]["application"]} for key in ordered if key in cards][:6]
+    return [{"id": key, "apply":cards[key]["application"], "principle":cards[key]["principle"]} for key in ordered if key in cards][:12]
 
 
 def validate_hook_issues(raw):
@@ -572,7 +575,7 @@ def validate_assessment(raw, script, brief=None, revision_notes=""):
     if blockers:
         score = min(score, 79)
     return {"score": score, "criteria": list(rows.values()), "unsupported_claims": unsupported,
-            "blockers": blockers, **({"requested_changes":requested} if requested is not None else {}), "method": "Uncalibrated script editorial readiness; not TRIBE inference or a finished-video score."}
+            "blockers": blockers, **({"requested_changes":requested} if requested is not None else {}), "method": "Uncalibrated script editorial readiness; not a finished-video performance forecast."}
 
 
 def validate_criterion(row, script):
@@ -925,7 +928,7 @@ def _legacy_final_script(request,complete,save,progress,save_draft=None):
     context={key:brief.get(key,'') for key in ('topic','facts','audience','language','content_mode','content_format','persona','creator_experience','creative_notes','objective','cta')}
     context['learned_mechanisms']=brief.get('learned_mechanisms',[])
     context['persona_direction']=persona_guidance(brief)
-    context['book_principles']=[card.get('principle','') for card in reference_cards(brief)[:3]]
+    context['creator_references']=reference_cards(brief)
     prompt=('Return exactly {"final_script":"one continuous block of script text"}. '
         'No title, scenes, timestamps, columns or extra JSON fields. '
         'Use the requested language and persona. Natural product integration; '
@@ -975,7 +978,7 @@ def _legacy_final_script(request,complete,save,progress,save_draft=None):
     # A single generated text block is not an independently calibrated score.
     assessment={'score':None,'criteria':[],'blockers':issues,'unsupported_claims':[],
                 'method':'Single-block script; no automatic editorial score was requested.'}
-    result={'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},
+    result={'reference_ids':[c['id'] for c in reference_cards(brief)],'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},
             'history':[],'target_met':False,'stop_reason':'needs_review' if issues else 'single_block_complete',
             'quality_status':'needs_review' if issues else 'ready','selected_hook':None,
             'revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
@@ -990,8 +993,8 @@ def write_final_script(request,complete,save,progress,save_draft=None):
         return _legacy_final_script(request,complete,save,progress,save_draft)
     from studio_pipeline import score_draft_script
     kind=brief['content_duration'];minimum,maximum,_,rules=FORMATS[kind]
-    context={k:brief.get(k,'') for k in ('topic','facts','audience','language','persona','creator_experience','creative_notes','objective','cta','content_duration')}
-    context.update(persona_direction=persona_guidance(brief),book_principles=[c.get('principle','') for c in reference_cards(brief)[:3]],learned_mechanisms=brief.get('learned_mechanisms',[]))
+    context={k:brief.get(k,'') for k in ('topic','facts','audience','language','persona','creator_experience','creative_notes','objective','cta','content_duration','content_mode','content_format','platform')}
+    context.update(persona_direction=persona_guidance(brief),creator_references=reference_cards(brief),learned_mechanisms=brief.get('learned_mechanisms',[]))
     prompt=system_prompt(brief)+' BRIEF: '+json.dumps(context,ensure_ascii=False)
     if request.get('previous_script'):
         prompt+=' PREVIOUS SCRIPT: '+script_text(request['previous_script'])+' REQUESTED CHANGES: '+request.get('revision_notes','')
@@ -1048,7 +1051,7 @@ def write_final_script(request,complete,save,progress,save_draft=None):
             prompt+=' REJECTED DRAFT: '+json.dumps(candidate,ensure_ascii=False)+' REWRITE FEEDBACK: '+gate['critique']+' '+ '; '.join(issues)
     if candidate is None:raise ValueError('No valid single-block script was generated.')
     assessment={'score':gate['overall_score'] if gate else None,'critique':gate['critique'] if gate else 'Scoring unavailable; no approval assigned.','criteria':[],'blockers':issues,'unsupported_claims':[],'method':'Uncalibrated pre-publication text assessment, not predicted sales or virality.'}
-    result={'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},'evaluation':gate,'gate_history':history,'approved':approved,'history':[],'target_met':approved,'quality_status':'ready' if approved else 'needs_review','stop_reason':'gate_approved' if approved else 'gate_rejected','revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
+    result={'reference_ids':[c['id'] for c in reference_cards(brief)],'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},'evaluation':gate,'gate_history':history,'approved':approved,'history':[],'target_met':approved,'quality_status':'ready' if approved else 'needs_review','stop_reason':'gate_approved' if approved else 'gate_rejected','revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
     save(result);progress(1,'Script approved' if approved else 'Not approved; review critique')
     return result
 

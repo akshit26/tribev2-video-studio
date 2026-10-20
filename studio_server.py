@@ -39,7 +39,7 @@ FRAME_FILE = re.compile(r"^(?:frames|ocr_frames)/frame_[0-9]+\.jpg$")
 CLIP_FILE = re.compile(r"^clips/clip_[0-9]{2}\.mp4$")
 TERMINAL_STATES = {"completed", "failed"}
 
-app = FastAPI(title="Tribe Video Studio", docs_url=None, redoc_url=None)
+app = FastAPI(title="Creator Video Studio", docs_url=None, redoc_url=None)
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="video-analysis")
 _lock = threading.RLock()
 _jobs: dict[str, dict[str, Any]] = {}
@@ -421,5 +421,5 @@ install_gemma_routes(sys.modules[__name__])
 
 if __name__ == "__main__":
     import uvicorn
-    print("Tribe Video Studio: http://127.0.0.1:8765", flush=True)
+    print("Creator Video Studio: http://127.0.0.1:8765", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=8765, proxy_headers=False)

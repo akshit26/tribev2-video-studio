@@ -233,7 +233,7 @@ class WriterTests(unittest.TestCase):
             b=writer.brief_values(dict(brief(),topic=topic,platform='Instagram Reels',content_format='routine_check'))
             refs={c['id'] for c in writer.reference_cards(b)}
             self.assertTrue({'solo-simple','instagram-best-practices','routine-commentary','beauty-storytime'}.issubset(refs))
-            self.assertLessEqual(len(refs),6)
+            self.assertLessEqual(len(refs),12)
         b=writer.brief_values(dict(brief(),content_format='mini_list'))
         self.assertIn('micro-list',{c['id'] for c in writer.reference_cards(b)})
 
@@ -250,7 +250,7 @@ class WriterTests(unittest.TestCase):
             with self.assertRaises(ValueError):writer.brief_values(dict(brief(),**{key:value}))
         b=writer.brief_values(dict(brief(),content_mode='paid_ad'))
         self.assertIn('PAID AD',writer.content_guidance(b))
-        self.assertIn('abcd',{c['id'] for c in writer.reference_cards(b)})
+        self.assertIn('creator-brand-bridge',{c['id'] for c in writer.reference_cards(b)})
         self.assertEqual(writer.rubric_for(b)['cta'],writer.RUBRIC['cta'])
 
     def test_ugc_honors_supplied_experience_and_mode_in_generation(self):
@@ -644,7 +644,7 @@ class WriterAPITests(unittest.TestCase):
 
     def test_page_library_experiments_and_busy_slot(self):
         self.assertEqual(self.client.get('/writer').status_code,200)
-        self.assertEqual(len(self.client.get('/api/scripts/library').json()['cards']),22)
+        self.assertEqual(self.client.get('/api/scripts/library').json()['cards'],writer.library()['cards'])
         values={'title':'Hook A/B','platform':'Reels','hypothesis':'Demo beats question','observations':'Too few impressions to decide.'}
         self.assertEqual(self.client.post('/api/scripts/experiments',json=values).status_code,201)
         self.assertEqual(len(self.client.get('/api/scripts/experiments').json()),1)

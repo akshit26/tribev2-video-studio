@@ -39,12 +39,8 @@ results/
 *.mkv
 *.pdf
 *.zip
-# The upstream demo notebook is large and available from its source repository.
-tribe_demo.ipynb
 videoanalyser/
 videotrive/
-tribev2/tribemain/
-tribev2/tribev2/
 
 # Testing / type-checking
 .pytest_cache/

@@ -37,7 +37,7 @@ def install(server):
                 _write_json(path / "state.json", state)
         if state['status']=='running' and isinstance(state.get('started_at'),(int,float)):
             state['elapsed_seconds']=round(max(0,time.time()-state['started_at']),1)
-        for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result"), ("tribe_rating.json", "tribe_recording_rating")]:
+        for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result")]:
             try:
                 loaded=json.loads((path / name).read_text(encoding="utf-8"))
                 if not isinstance(loaded,dict):continue
@@ -172,25 +172,6 @@ def install(server):
             rows=json.loads((server.RESULTS_DIR/'_writer_learning'/'rules.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):rows=[]
         return {'rules':rows[-30:],'method':'Observed video mechanisms + book references. Conditional hypotheses, not script templates or causal virality proof.'}
-
-    @app.post('/api/scripts/{script_id}/tribe-score')
-    def tribe_rating(script_id: str,values: Annotated[dict,Body()]):
-        state=read(script_id)
-        job_id=values.get('video_job_id')
-        if not isinstance(job_id,str) or not server.JOB_ID.fullmatch(job_id):raise HTTPException(422,'Choose the recorded video job to rate.')
-        job=server._load_job(job_id)
-        if job['status']!='completed':raise HTTPException(409,'Finish the recorded video analysis first.')
-        path=server._job_dir(job_id)
-        media=next((p for p in path.glob('input.*') if p.suffix.lower() in server.VIDEO_EXTENSIONS),None)
-        if not media:raise HTTPException(422,'Original recorded media is missing.')
-        language={'English':'en','Hindi':'hi','Hindi (Roman)':'hi','Hinglish':'hi'}.get(state['brief']['language'],state['brief']['language'])
-        try:
-            from studio_script_tribe import rate_recording
-            result=rate_recording(path,media,language)
-        except (OSError,ValueError,KeyError) as exc:raise HTTPException(422,server._safe_error(exc)) from None
-        from studio_pipeline import _write_json
-        _write_json(directory(script_id)/'tribe_rating.json',dict(result,video_job_id=job_id))
-        return result
 
     def performance_path():
         return server.RESULTS_DIR / "_scripts" / "performance_data.json"

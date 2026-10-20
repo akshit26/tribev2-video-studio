@@ -3,88 +3,75 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tribev2"
-version = "0.1.0"
-description = "Deep multimodal brain encoding"
+name = "creator-video-studio"
+version = "0.2.0"
+description = "Creator-led scriptwriting and API video review"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
-authors = [{name = "Meta Platforms, Inc."}]
-
 dependencies = [
-  "neuralset==0.0.2",
-  "neuraltrain==0.0.2",
-  "exca==0.5.20",
-  "torch>=2.5.1,<2.7",
-  "numpy==2.2.6",
-  "torchvision>=0.20,<0.22",
-  "x_transformers==1.27.20",
-  "einops",
-  "pyyaml",
-  "moviepy>=2.2.1",
-  "huggingface_hub",
-  "gtts",
-  "langdetect",
-  "spacy",
-  "soundfile",
-  "pip",
-  "Levenshtein",
-  "julius",
-  "transformers"
+  "openai>=1.60,<3",
+  "httpx>=0.27,<1",
+  "yt-dlp>=2026.8.19",
+  "pypdf>=5,<7",
+  "psutil>=7,<8",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "python-multipart>=0.0.18,<1",
+  "reportlab>=4,<6",
+  "numpy>=2,<3",
+  "pillow>=10",
+  "matplotlib>=3.9",
+  "soundfile>=0.12"
 ]
 
-[project.urls]
-Homepage = "https://github.com/facebookresearch/tribev2"
-Repository = "https://github.com/facebookresearch/tribev2"
-
 [project.optional-dependencies]
-  studio = [
-    "openai>=1.60,<3",
-    "httpx>=0.27,<1",
-    "yt-dlp>=2026.8.19",
-    "rapidocr-onnxruntime==1.4.4",
-    "pypdf>=5,<7",
-    "psutil>=7,<8",
-    "playwright>=1.50,<2",
-    "fastapi>=0.115,<1",
-    "uvicorn>=0.30,<1",
-    "python-multipart>=0.0.18,<1",
-    "reportlab>=4,<6",
-    "faster-whisper>=1.2,<2",
-    "accelerate>=1,<2",
-    "matplotlib",
-  ]
-  analysis = [
-    "faster-whisper>=1.2,<2",
-    "accelerate>=1,<2",
-    "torchaudio>=2.5.1,<2.7",
-    "matplotlib",
-  ]
-  plotting = [
-    "nibabel",
-    "matplotlib",
-    "seaborn",
-    "colorcet",
-    "nilearn",
-    "scipy",
-    "pyvista",
-    "scikit-image",
-  ]
-  training = [
-    "nibabel",
-    "torchmetrics",
-    "wandb",
-    "lightning",  
-  ]
-  test = [
-    "pytest",
-  ]
+studio = []
+riva = ["nvidia-riva-client>=2.27,<3"]
+local = ["torch>=2.5,<3", "transformers>=4.53,<5", "huggingface_hub<1", "faster-whisper>=1.2,<2", "accelerate>=1,<2", "rapidocr-onnxruntime==1.4.4"]
+test = ["pytest", "playwright>=1.50,<2"]
 
-[tool.black]
-line-length = 88
-
-[tool.isort]
-profile = "black"
-
-[tool.setuptools.packages.find]
-include = ["tribe*"]
+[tool.setuptools]
+py-modules = [
+  "studio_av_signals",
+  "studio_brand_output",
+  "studio_brand_review",
+  "studio_brand_routes",
+  "studio_brands",
+  "studio_brief",
+  "studio_decision_pdf",
+  "studio_estimate",
+  "studio_evaluation",
+  "studio_gemma_routes",
+  "studio_gemma_video",
+  "studio_gpu_monitor",
+  "studio_ocr",
+  "studio_pipeline",
+  "studio_remote_review",
+  "studio_report",
+  "studio_report_quality",
+  "studio_resources",
+  "studio_review",
+  "studio_review_cache",
+  "studio_review_output",
+  "studio_review_parts",
+  "studio_scores",
+  "studio_screenshots",
+  "studio_script_examples",
+  "studio_script_fast",
+  "studio_script_hf",
+  "studio_script_language",
+  "studio_script_local",
+  "studio_script_nvidia",
+  "studio_script_performance",
+  "studio_script_research",
+  "studio_script_research_routes",
+  "studio_script_routes",
+  "studio_script_team",
+  "studio_script_writer",
+  "studio_server",
+  "studio_video",
+  "studio_video_learning",
+  "studio_viewer_response",
+  "studio_virality"
+]

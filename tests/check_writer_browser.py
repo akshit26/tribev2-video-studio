@@ -1,4 +1,4 @@
-﻿"""Single-block writer browser regression; all generation calls are mocked."""
+"""Single-block writer browser regression; all generation calls are mocked."""
 import copy
 import json
 import os
@@ -16,7 +16,7 @@ def main():
     sid='b'*32;errors=[];requests=[];saved={}
     text='My notebook has one job. [Hold notebook] Keep the ideas I forget between breakfast and finding my keys. I do not need another app asking me to organise my entire personality. I need a blank page where a shopping list can sit next to a ridiculous business idea without either one sending me a notification. That is the whole system. Write it down and get on with the day.'
     brief=brief_values({'topic':'Notebook','facts':'A notebook with 80 blank pages.','duration':30,'writer_backend':'team'})
-    result={'final_script':text,'brief':brief,'best':{'script':{'final_script':text},'assessment':{'score':None,'criteria':[],'blockers':[]}},'history':[],'target_met':False,'stop_reason':'single_block_complete','selected_hook':None}
+    result={'reference_ids':['creator-emotion','creator-brand-bridge'],'final_script':text,'brief':brief,'best':{'script':{'final_script':text},'assessment':{'score':None,'criteria':[],'blockers':[]}},'history':[],'target_met':False,'stop_reason':'single_block_complete','selected_hook':None}
     state={'id':sid,'status':'completed','stage':'Script ready','brief':brief,'result':result}
     def handle(route):
         req=route.request;path=urlsplit(req.url).path
@@ -52,6 +52,9 @@ def main():
         assert page.locator('#sceneEditor textarea').count()==1
         assert page.locator('#sceneEditor .scene').count()==0
         assert page.locator('#finalScript').input_value()==text
+        assert page.locator('#appliedReferences p').count()==2
+        assert page.locator('#tribeStatus, #rateTribe').count()==0
+        assert 'Creator' in page.title()
         assert page.locator('#revisionScope option').count()==1
         assert page.locator('#finalScript').evaluate('(e)=>e.scrollHeight<=e.clientHeight+2')
         page.context.grant_permissions(['clipboard-read','clipboard-write'],origin=BASE_URL)

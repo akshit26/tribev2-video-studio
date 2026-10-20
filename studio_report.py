@@ -225,7 +225,7 @@ def build_report(video_info: dict, measurements: list[dict], transcript: dict | 
         finding("processing", "Processing note", warning, "Reported by the local analysis pipeline.", "review")
 
     limitations = [
-        "This memory-conscious report uses media measurements, speech recognition, and optional sampled-frame captions. Full TRIBE v2 brain inference was not run.",
+        "This memory-conscious report uses media measurements, speech recognition, and optional sampled-frame captions. Scores describe editorial and media observations.",
         "No measured or predicted brain activity, emotion, attention, retention, virality, authenticity, or medical conclusions are provided.",
         "Transcripts and frame captions are automatic model outputs and can be inaccurate. Verify names, numbers, claims, and uncertain words against the original video.",
         "Word counts use whitespace-separated transcript tokens. This measure is less meaningful for languages that do not separate words with spaces. Pace uses total video duration.",
@@ -437,7 +437,6 @@ def render_pdf(report: dict, output: Path) -> Path:
         ("Configured memory budget", number(process.get("budget_mb"), 0, " MiB")),
         ("Observed peak GPU memory", number(process.get("peak_gpu_mb"), 0, " MiB")),
         ("GPU measurement scope", "Process" if process.get("peak_gpu_scope") == "process" else "Whole device, including other applications"),
-        ("Full TRIBE brain inference", "Not run"),
     ])
     for model in process.get("models", []):
         story.append(paragraph("Model: " + str(model), "small"))

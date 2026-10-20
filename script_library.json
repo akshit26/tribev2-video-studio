@@ -1,29 +1,277 @@
 {
-  "version": 2,
-  "reviewed": "2026-10-19",
-  "notice": "Original editorial applications of publicly described principles, not book texts or model training. These sources do not establish a viral success rate. Platform advice may change.",
+  "version": 3,
+  "reviewed": "2026-10-20",
+  "notice": "Creator-first reference notes and original editorial heuristics. Apply mechanisms, never copy scripts or impersonate creators. These notes guide prompting, not model-weight training or guaranteed virality.",
   "cards": [
-    {"id":"stick", "title":"Made to Stick", "author":"Chip Heath and Dan Heath", "kind":"book", "url":"https://heathbrothers.com/books/made-to-stick/", "principle":"One memorable idea benefits from concrete details, credible support and a story with a meaningful stake.", "application":"Build the script around one observable change; replace abstract benefit lists with a specific scene.", "caution":"Memorability is not evidence that a product claim is true."},
-    {"id":"contagious", "title":"Contagious", "author":"Jonah Berger", "kind":"book", "url":"https://jonahberger.com/contagious-resources/", "principle":"People can share useful information, identity signals and stories connected to familiar situations.", "application":"Give the intended viewer a practical takeaway they could pass to someone in the same situation.", "caution":"A sharing framework is not a prediction of views or shares."},
-    {"id":"everybody-writes", "title":"Everybody Writes", "author":"Ann Handley", "kind":"book", "url":"https://annhandley.com/everybodywrites/", "principle":"Useful marketing content takes deliberate drafting, revision and attention to the reader.", "application":"Start with the viewer's question, write a plain-language answer, then cut anything that does not help that viewer.", "caution":"This is an original editorial application, not a reproduction of the book or an effectiveness estimate."},
-    {"id":"storybrand", "title":"Building a StoryBrand", "author":"Donald Miller", "kind":"book", "url":"https://storybrand.com/learn-the-framework/", "principle":"A clear customer story explains a problem, the help available and the next step.", "application":"Keep the viewer's goal central. Show how the product helps, then give one small action toward that goal.", "caution":"Do not turn a possible outcome into a guaranteed result or invent an audience fear."},
-    {"id":"abcd", "title":"ABCDs of effective video ads", "author":"Google", "kind":"platform research", "url":"https://support.google.com/google-ads/answer/14783551?hl=en", "principle":"Plan attention, brand recognition, audience connection and a clear next action together.", "application":"Make the product part of the opening action and end with one feasible CTA.", "caution":"Paid-ad findings need testing before applying them to organic content."},
-    {"id":"clear", "title":"Concise, scannable and objective writing", "author":"Nielsen Norman Group", "kind":"research", "url":"https://www.nngroup.com/articles/concise-scannable-and-objective-how-to-write-for-the-web/", "principle":"Web-reading usability improved with concise, scannable and objective copy in the reported study.", "application":"Use short overlays and direct spoken sentences; remove inflated adjectives and repeated claims.", "caution":"Web-page usability results are not measured short-video retention effects."},
-    {"id":"test", "title":"YouTube thumbnail test and compare", "author":"YouTube Help", "kind":"experiment guidance", "url":"https://support.google.com/youtube/answer/13861714?hl=en", "principle":"Controlled comparisons and watch-time outcomes can reveal differences that click counts alone miss.", "application":"Propose two hook variants with the same body and CTA. Record exposure, retention and the primary outcome before declaring a winner.", "caution":"Thumbnail experiments do not prove a script hook will work; sequential organic posts are confounded."},
-    {"id":"viral-research", "title":"What Makes Online Content Viral?", "author":"Jonah Berger and Katherine L. Milkman, Journal of Marketing Research (2012)", "kind":"peer-reviewed research", "url":"https://jonahberger.com/wp-content/uploads/2013/02/ViralityB.pdf", "principle":"This research examined sharing of news articles and tested links between emotional activation and transmission.", "application":"Consider a truthful moment of surprise or useful discovery worth passing on, then test it with the intended audience.", "caution":"News sharing and laboratory tasks do not establish short-video conversion or retention effects. Do not manufacture fear or outrage."},
-    {"id":"tiktok", "title":"TikTok Creative Codes", "author":"TikTok for Business", "kind":"platform guidance", "url":"https://ads.tiktok.com/business/library/TikTok_CreativeCodes_May2023.pdf", "principle":"The platform's advertising guidance uses an opening hook, a body that carries the message and a closing action.", "application":"Plan a vertical first-frame action, a concise demonstration and one closing action. Use captions that fit the composition.", "caution":"Platform advertising guidance is not an independent causal study or a promise of organic reach."},
-    {"id":"hook-payoff", "title":"Promise and payoff checklist", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A hook makes a specific promise; the body must deliver it without misleading the viewer.", "application":"Write the opening question and the exact scene that answers it. Remove the hook if the payoff cannot be supplied.", "caution":"This checklist is an editorial hypothesis, not a published experiment."},
-    {"id":"shootable", "title":"Shootable story beats", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"Each scene needs a purpose, an observable action and enough time to perform it.", "application":"Break the video into opening, demonstration and payoff/CTA. Specify framing, props and natural pauses.", "caution":"A shot plan does not establish the quality of actual voice or visuals."},
-    {"id":"experiment", "title":"Hook experiment protocol", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"Choose the hypothesis and primary metric before collecting results; avoid changing multiple creative variables together.", "application":"Compare two openings with an otherwise fixed edit. Save platform, audience, dates, impressions, early retention and conversions. Treat small or unmatched samples as inconclusive.", "caution":"This tool stores user observations; it does not run platform experiments or infer causality from uncontrolled posts."},
-    {"id":"instagram-best-practices", "title":"Instagram Best Practices creator hub", "author":"Meta / Instagram", "kind":"platform guidance", "url":"https://about.fb.com/news/2024/10/best-practices-education-hub-creators-instagram/", "principle":"Instagram's professional dashboard offers creator guidance covering creation, engagement and reach, including account-specific tips.", "application":"Plan one clear audience moment, then compare it with your own account insights and the in-app guidance. Do not copy an alleged universal algorithm formula.", "caution":"The announcement describes a guidance hub, not proof that a specific script format will go viral."},
-    {"id":"instagram-trials", "title":"Instagram Trial Reels experiments", "author":"Meta / Instagram", "kind":"platform experiment guidance", "url":"https://about.fb.com/news/2024/12/trial-reels-try-content-non-followers-first-see-what-perfoms-best/", "principle":"Trial Reels let creators try content with non-followers first and inspect engagement before wider sharing.", "application":"Where available, test a rant against a quieter observation with the same topic. Record views, likes, comments and shares plus differences in timing and audience.", "caution":"Trial Reels are not randomized script experiments. Feature availability and results vary; do not infer causality from unmatched posts."},
-    {"id":"instagram-original-voice", "title":"Instagram creative experimentation", "author":"Meta / Instagram", "kind":"platform announcement", "url":"https://about.fb.com/news/2025/06/inspiring-creativity-that-brings-people-together/", "principle":"Instagram's creativity initiative encourages experimentation and describes tools for trying new ideas.", "application":"Use the creator's own vocabulary, situation and observation. Change one angle per iteration instead of reproducing another creator's script.", "caution":"Platform encouragement to experiment is not evidence that copying a trend guarantees reach."},
-    {"id":"solo-simple", "title":"One person, one phone, one idea", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A strong observation can carry a simple direct-to-camera video without a cast or elaborate production.", "application":"Write for one creator in one room: an opening thought, two short beats and a payoff. Use at most three simple shots and optional hands-only B-roll.", "caution":"Production simplicity is a practical writing constraint, not a measured virality advantage."},
-    {"id":"solo-rant", "title":"Relatable mini-rant", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A specific shared frustration gives a solo creator a natural reason to speak with energy.", "application":"Start mid-thought, name one annoyance, escalate through two recognizable details, then land a punchline or useful point. Keep the product incidental.", "caution":"Do not manufacture outrage, shame appearance or invent personal product results to intensify a rant."},
-    {"id":"routine-commentary", "title":"Routine commentary / GRWM", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A familiar getting-ready action can provide a simple visual while the creator tells a story or observation.", "application":"One creator talks while doing one familiar task. Keep shots practical, speak one thought at a time and show only label-consistent product use.", "caution":"Do not invent application schedules, combinations or treatment instructions for a haircare or skincare routine."},
-    {"id":"beauty-storytime", "title":"Haircare and skincare: the everyday moment", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"Wash-day planning, bathroom shelves, getting-ready delays and label confusion can be recognizable topics without a sales pitch.", "application":"Choose one specific annoyance or genuine observation. Let a reaction, self-aware aside or callback deliver the payoff; avoid ingredient recitation and fabricated before/after stories.", "caution":"Use supplied creator experience for personal stories. A relatable scenario is not clinical evidence or a diagnosis."},
-    {"id":"opinion-care", "title":"Low-stakes beauty hot take", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A clearly framed personal preference can invite conversation without pretending to be a universal scientific rule.", "application":"Open with a proposed opinion about routine complexity or habits, give one concrete reason, and leave room for viewers to disagree naturally.", "caution":"Keep opinion separate from ingredient safety, diagnosis, treatment or efficacy claims; those need appropriate factual support."},
-    {"id":"creator-replies", "title":"One-question creator reply", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"One focused question can provide a complete solo-video structure with little production overhead.", "application":"Use a real supplied comment, or label a question as hypothetical. Answer it directly, give one useful example and stop when the question is resolved.", "caution":"Do not invent follower comments, fake screenshots, endorsements or professional credentials."},
-    {"id":"micro-list", "title":"Two or three small observations", "author":"Studio editorial practice", "kind":"editorial heuristic", "url":null, "principle":"A short list works best when its items develop one recognizable topic rather than unrelated tips.", "application":"Use two or three concrete observations about the same everyday situation. Keep each line brief and finish with the strongest point or callback.", "caution":"Do not turn the list into unsupported medical advice, a feature dump or a guaranteed growth formula."}
+    {
+      "id": "stick",
+      "title": "Made to Stick",
+      "author": "Chip Heath and Dan Heath",
+      "kind": "book",
+      "url": "https://heathbrothers.com/books/made-to-stick/",
+      "principle": "One memorable idea benefits from concrete details, credible support and a story with a meaningful stake.",
+      "application": "Build the script around one observable change; replace abstract benefit lists with a specific scene.",
+      "caution": "Memorability is not evidence that a product claim is true."
+    },
+    {
+      "id": "contagious",
+      "title": "Contagious",
+      "author": "Jonah Berger",
+      "kind": "book",
+      "url": "https://jonahberger.com/contagious-resources/",
+      "principle": "People can share useful information, identity signals and stories connected to familiar situations.",
+      "application": "Give the intended viewer a practical takeaway they could pass to someone in the same situation.",
+      "caution": "A sharing framework is not a prediction of views or shares."
+    },
+    {
+      "id": "everybody-writes",
+      "title": "Everybody Writes",
+      "author": "Ann Handley",
+      "kind": "book",
+      "url": "https://annhandley.com/everybodywrites/",
+      "principle": "Useful marketing content takes deliberate drafting, revision and attention to the reader.",
+      "application": "Start with the viewer's question, write a plain-language answer, then cut anything that does not help that viewer.",
+      "caution": "This is an original editorial application, not a reproduction of the book or an effectiveness estimate."
+    },
+    {
+      "id": "clear",
+      "title": "Concise, scannable and objective writing",
+      "author": "Nielsen Norman Group",
+      "kind": "research",
+      "url": "https://www.nngroup.com/articles/concise-scannable-and-objective-how-to-write-for-the-web/",
+      "principle": "Web-reading usability improved with concise, scannable and objective copy in the reported study.",
+      "application": "Use direct spoken sentences, familiar words and one idea at a time. Remove inflated adjectives and repeated claims.",
+      "caution": "Web-page usability results are not measured short-video retention effects."
+    },
+    {
+      "id": "test",
+      "title": "YouTube thumbnail test and compare",
+      "author": "YouTube Help",
+      "kind": "experiment guidance",
+      "url": "https://support.google.com/youtube/answer/13861714?hl=en",
+      "principle": "Controlled comparisons and watch-time outcomes can reveal differences that click counts alone miss.",
+      "application": "Propose two hook variants with the same body and CTA. Record exposure, retention and the primary outcome before declaring a winner.",
+      "caution": "Thumbnail experiments do not prove a script hook will work; sequential organic posts are confounded."
+    },
+    {
+      "id": "viral-research",
+      "title": "What Makes Online Content Viral?",
+      "author": "Jonah Berger and Katherine L. Milkman, Journal of Marketing Research (2012)",
+      "kind": "peer-reviewed research",
+      "url": "https://jonahberger.com/wp-content/uploads/2013/02/ViralityB.pdf",
+      "principle": "This research examined sharing of news articles and tested links between emotional activation and transmission.",
+      "application": "Consider a truthful moment of surprise or useful discovery worth passing on, then test it with the intended audience.",
+      "caution": "News sharing and laboratory tasks do not establish short-video conversion or retention effects. Do not manufacture fear or outrage."
+    },
+    {
+      "id": "tiktok",
+      "title": "TikTok Creative Codes",
+      "author": "TikTok for Business",
+      "kind": "platform guidance",
+      "url": "https://ads.tiktok.com/business/library/TikTok_CreativeCodes_May2023.pdf",
+      "principle": "The platform's advertising guidance uses an opening hook, a body that carries the message and a closing action.",
+      "application": "Build a concise creator-led story with an immediate audience stake, progression and a delivered payoff; adapt advertiser guidance to the selected content mode.",
+      "caution": "Platform advertising guidance is not an independent causal study or a promise of organic reach."
+    },
+    {
+      "id": "hook-payoff",
+      "title": "Promise and payoff checklist",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A hook makes a specific promise; the body must deliver it without misleading the viewer.",
+      "application": "Write the opening promise and the exact verbal payoff. Remove the hook if its payoff cannot be supplied.",
+      "caution": "This checklist is an editorial hypothesis, not a published experiment."
+    },
+    {
+      "id": "shootable",
+      "title": "Shootable story beats",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "Each scene needs a purpose, an observable action and enough time to perform it.",
+      "application": "Keep the idea simple enough for one creator to express naturally. Write dialogue only, with brief inline cues only when the requested duration requires them.",
+      "caution": "A shot plan does not establish the quality of actual voice or visuals."
+    },
+    {
+      "id": "experiment",
+      "title": "Hook experiment protocol",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "Choose the hypothesis and primary metric before collecting results; avoid changing multiple creative variables together.",
+      "application": "Compare two openings with an otherwise fixed edit. Save platform, audience, dates, impressions, early retention and conversions. Treat small or unmatched samples as inconclusive.",
+      "caution": "This tool stores user observations; it does not run platform experiments or infer causality from uncontrolled posts."
+    },
+    {
+      "id": "instagram-best-practices",
+      "title": "Instagram Best Practices creator hub",
+      "author": "Meta / Instagram",
+      "kind": "platform guidance",
+      "url": "https://about.fb.com/news/2024/10/best-practices-education-hub-creators-instagram/",
+      "principle": "Instagram's professional dashboard offers creator guidance covering creation, engagement and reach, including account-specific tips.",
+      "application": "Plan one clear audience moment, then compare it with your own account insights and the in-app guidance. Do not copy an alleged universal algorithm formula.",
+      "caution": "The announcement describes a guidance hub, not proof that a specific script format will go viral."
+    },
+    {
+      "id": "instagram-trials",
+      "title": "Instagram Trial Reels experiments",
+      "author": "Meta / Instagram",
+      "kind": "platform experiment guidance",
+      "url": "https://about.fb.com/news/2024/12/trial-reels-try-content-non-followers-first-see-what-perfoms-best/",
+      "principle": "Trial Reels let creators try content with non-followers first and inspect engagement before wider sharing.",
+      "application": "Where available, test a rant against a quieter observation with the same topic. Record views, likes, comments and shares plus differences in timing and audience.",
+      "caution": "Trial Reels are not randomized script experiments. Feature availability and results vary; do not infer causality from unmatched posts."
+    },
+    {
+      "id": "instagram-original-voice",
+      "title": "Instagram creative experimentation",
+      "author": "Meta / Instagram",
+      "kind": "platform announcement",
+      "url": "https://about.fb.com/news/2025/06/inspiring-creativity-that-brings-people-together/",
+      "principle": "Instagram's creativity initiative encourages experimentation and describes tools for trying new ideas.",
+      "application": "Use the creator's own vocabulary, situation and observation. Change one angle per iteration instead of reproducing another creator's script.",
+      "caution": "Platform encouragement to experiment is not evidence that copying a trend guarantees reach."
+    },
+    {
+      "id": "solo-simple",
+      "title": "One person, one phone, one idea",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A strong observation can carry a simple direct-to-camera video without a cast or elaborate production.",
+      "application": "Write for one creator: an opening thought, a short progression and a satisfying payoff. Keep the language easy to say aloud.",
+      "caution": "Production simplicity is a practical writing constraint, not a measured virality advantage."
+    },
+    {
+      "id": "solo-rant",
+      "title": "Relatable mini-rant",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A specific shared frustration gives a solo creator a natural reason to speak with energy.",
+      "application": "Start mid-thought, name one annoyance, escalate through two recognizable details, then land a punchline or useful point. Keep the product incidental.",
+      "caution": "Do not manufacture outrage, shame appearance or invent personal product results to intensify a rant."
+    },
+    {
+      "id": "routine-commentary",
+      "title": "Routine commentary / GRWM",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A familiar getting-ready action can provide a simple visual while the creator tells a story or observation.",
+      "application": "One creator comments on one familiar task with a specific observation. Only describe personal use when the brief supplies that authentic experience.",
+      "caution": "Do not invent application schedules, combinations or treatment instructions for a haircare or skincare routine."
+    },
+    {
+      "id": "beauty-storytime",
+      "title": "Haircare and skincare: the everyday moment",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "Wash-day planning, bathroom shelves, getting-ready delays and label confusion can be recognizable topics without a sales pitch.",
+      "application": "Choose one specific annoyance or genuine observation. Let a reaction, self-aware aside or callback deliver the payoff; avoid ingredient recitation and fabricated before/after stories.",
+      "caution": "Use supplied creator experience for personal stories. A relatable scenario is not clinical evidence or a diagnosis."
+    },
+    {
+      "id": "opinion-care",
+      "title": "Low-stakes beauty hot take",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A clearly framed personal preference can invite conversation without pretending to be a universal scientific rule.",
+      "application": "Open with a proposed opinion about routine complexity or habits, give one concrete reason, and leave room for viewers to disagree naturally.",
+      "caution": "Keep opinion separate from ingredient safety, diagnosis, treatment or efficacy claims; those need appropriate factual support."
+    },
+    {
+      "id": "creator-replies",
+      "title": "One-question creator reply",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "One focused question can provide a complete solo-video structure with little production overhead.",
+      "application": "Use a real supplied comment, or label a question as hypothetical. Answer it directly, give one useful example and stop when the question is resolved.",
+      "caution": "Do not invent follower comments, fake screenshots, endorsements or professional credentials."
+    },
+    {
+      "id": "micro-list",
+      "title": "Two or three small observations",
+      "author": "Studio editorial practice",
+      "kind": "editorial heuristic",
+      "url": null,
+      "principle": "A short list works best when its items develop one recognizable topic rather than unrelated tips.",
+      "application": "Use two or three concrete observations about the same everyday situation. Keep each line brief and finish with the strongest point or callback.",
+      "caution": "Do not turn the list into unsupported medical advice, a feature dump or a guaranteed growth formula."
+    },
+    {
+      "id": "creator-emotion",
+      "title": "Emotional recognition before promotion",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "Start with a specific feeling the audience recognizes; move it toward relief, delight, curiosity or a laugh.",
+      "application": "Choose one small audience tension. Make the opening recognizable, then deliver an emotional turn through a concrete observation.",
+      "caution": "Do not manufacture shame, anxiety or false personal testimony."
+    },
+    {
+      "id": "creator-share",
+      "title": "The send-this-to-a-friend test",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "Sharing can express identity, a shared frustration, useful knowledge or an inside joke.",
+      "application": "Name the recognizable situation precisely enough that a viewer knows which friend would understand it. Earn the share through the idea rather than begging for engagement.",
+      "caution": "Shareability is a hypothesis to test, not a predicted outcome."
+    },
+    {
+      "id": "creator-brand-bridge",
+      "title": "A product with a role in the story",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "An influencer earns attention through an idea; the product participates in the payoff.",
+      "application": "Build a rant, discovery, comparison or tiny story worth watching on its own. Connect one verified product fact to that moment. Use one understated, concrete CTA when required.",
+      "caution": "Never invent usage, results, sensory experience, prices or sponsorship status. Keep paid relationships transparent when supplied."
+    },
+    {
+      "id": "creator-payoff",
+      "title": "Curiosity with an honest payoff",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "An opening creates a promise which the ending must satisfy.",
+      "application": "Open on a specific odd detail, reversal or unresolved observation. Add information with each sentence; resolve the exact promise before the CTA.",
+      "caution": "Avoid empty cliffhangers and bait with no answer."
+    },
+    {
+      "id": "creator-niches",
+      "title": "Specificity across creator niches",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "Relatable detail gives a familiar format its own voice.",
+      "application": "Skincare: routine confusion without medical promises. Fashion: a styling dilemma. Food/drinks: a grounded preference, not invented tasting. FMCG: an everyday annoyance. Arcade: playful competition without invented wins. Pick one situation, not a feature checklist.",
+      "caution": "All product assertions must come from the brief; comedy does not excuse fabricated proof."
+    },
+    {
+      "id": "creator-language",
+      "title": "Hindi, English and Hinglish that sound spoken",
+      "author": "Creator Studio editorial desk",
+      "kind": "Original creator heuristic",
+      "url": "",
+      "principle": "A creator speaks in audience idiom rather than translating advertising slogans.",
+      "application": "Use the requested language and script consistently. Prefer everyday phrasing, contractions, rhythmic pauses and culturally intelligible jokes; preserve only natural code-switches.",
+      "caution": "Do not caricature an accent or use stereotypes as a shortcut."
+    },
+    {
+      "id": "youtube-creator-shorts",
+      "title": "YouTube Shorts: audience and first seconds",
+      "author": "YouTube",
+      "kind": "Official creator guidance",
+      "url": "https://blog.youtube/creator-and-artist-stories/your-guide-to-getting-started-with-youtube-shorts/",
+      "principle": "Choose a recognizable niche idea and establish its appeal in the first few seconds.",
+      "application": "Use a solo creator observation, useful tip or comic moment, with one clear payoff. Adapt the principle to the brief rather than copying a popular clip.",
+      "caution": "Official guidance does not establish a guaranteed ranking formula."
+    }
   ]
 }

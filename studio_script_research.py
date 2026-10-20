@@ -64,7 +64,7 @@ def search_sources(brief):
     query=brief['topic']+' when:90d'
     hindi=brief['language']=='Hindi'
     url='https://news.google.com/rss/search?'+urllib.parse.urlencode({'q':query,'hl':'hi-IN' if hindi else 'en-IN','gl':'IN','ceid':'IN:hi' if hindi else 'IN:en'})
-    req=urllib.request.Request(url,headers={'User-Agent':'TribeTopicResearch/1.0','Accept':'application/rss+xml'})
+    req=urllib.request.Request(url,headers={'User-Agent':'CreatorTopicResearch/1.0','Accept':'application/rss+xml'})
     try:
         with urllib.request.urlopen(req,timeout=20) as response:
             data=response.read(500_001)
