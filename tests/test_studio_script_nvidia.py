@@ -80,7 +80,7 @@ class NvidiaTests(unittest.TestCase):
                 self.assertEqual(n.nvidia_token(), 'nvapi-TESTENV')
                 config = hf.configuration()
                 self.assertTrue(config['nvidia_token_configured'])
-                self.assertEqual(config['default_backend'], 'fast')
+                self.assertEqual(config['default_backend'], 'team' if config['team_configured'] else 'fast')
                 self.assertNotIn('nvapi-TEST', json.dumps(config))
 
     def test_backend_validation_and_missing_key(self):

@@ -1,4 +1,4 @@
-"""GPT-OSS drafts, Gemma reviews; editorial scores never masquerade as TRIBE."""
+"""GPT-OSS drafts with a separate NVIDIA scoring gate; editorial scores are not TRIBE."""
 import json
 import sys
 from studio_script_nvidia import nvidia_token as credential

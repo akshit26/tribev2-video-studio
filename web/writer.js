@@ -49,8 +49,7 @@ async function poll(){
     if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
     $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
     $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
-    const fastRetry=job.brief?.writer_backend==='team'&&engineConfig?.fast_configured;
-    $('retryJob').dataset.fastRetry=fastRetry?'true':'false';if(fastRetry){$('retryJob').textContent='Retry with fast writer';if(job.status==='failed'){$('writerBackend').value='fast';updateEngine();}}
+    $('retryJob').dataset.fastRetry='false';
     $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&(['needs_review','unavailable'].includes(job.hook_options?.review_status)||job.result?.quality_status==='needs_review'));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
       renderHooks(job.hook_options.hooks,job.hook_options);shownHooks=JSON.stringify(job.hook_options);
@@ -157,9 +156,10 @@ async function init(){
     if(results[1].status==='fulfilled')for(const b of results[1].value){const o=make('option',b.name);o.value=b.id;$('brandSelect').append(o);}
     for(const r of results.slice(1))if(r.status==='rejected')status(r.reason.message,true);
     if(results[4].status==='fulfilled'){personaCatalog=results[4].value.personas;updatePersona();}
-    if(results[5].status==='fulfilled'){engineConfig=results[5].value;$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
+    if(results[5].status==='fulfilled'){engineConfig=results[5].value;if(engineConfig.team_configured)engineConfig.default_backend='team';$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
     if(results[6].status==='fulfilled'){exampleCatalog=results[6].value;renderReferences();}
     active=new URLSearchParams(location.search).get('script')||localStorage.getItem('tribe-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('tribe-writer-active');}}
+    if(!new URLSearchParams(location.search).has('script')&&!busy&&engineConfig?.default_backend==='team'){$('writerBackend').value='team';updateEngine();}
   }catch(e){status(e.message,true);}
 }
 

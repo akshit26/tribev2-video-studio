@@ -47,7 +47,7 @@ def configuration():
     team_ready=ready()
     from studio_script_fast import ready as fast_ready
     fast_configured=fast_ready()
-    return {"default_backend": "fast" if fast_configured else "team" if team_ready else "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
+    return {"default_backend": "team" if team_ready else "fast" if fast_configured else "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
             "team_configured":team_ready,"fast_configured":fast_configured,
             "nvidia_token_configured": nvidia_ready, "nvidia_model": MODEL,
             "models": [{"id": key, "name": name} for key, name in MODELS.items()],

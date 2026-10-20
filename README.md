@@ -200,3 +200,5 @@ response-format request with HTTP 500 during live testing, while the equivalent
 prompt-only request succeeded. The hosted `json_object` mode succeeded in the same check. It is used for
 Nemotron output, with strict script/score field and type validation in the app.
 Reasoning controls follow NVIDIA's [model guide](https://docs.nvidia.com/nim/large-language-models/latest/get-started/advanced/get-started-nemotron-3.5-super-vl.html).
+
+The preferred writing engine is GPT-OSS 20B with NVIDIA Nemotron pre-scoring. When GPT-OSS is configured it is selected by default. Retrying a GPT-OSS job keeps GPT-OSS selected. Reasoning remains enabled and each request allows ten minutes.

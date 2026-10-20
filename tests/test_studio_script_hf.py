@@ -25,6 +25,10 @@ class HostedWriterTests(unittest.TestCase):
         with patch.object(hf,'hf_token',side_effect=AssertionError('Local must not read credentials')):
             hf.validate_configuration(b)
 
+    def test_gptoss_is_preferred_when_both_api_writers_are_configured(self):
+        with patch('studio_script_team.ready',return_value=True),patch('studio_script_fast.ready',return_value=True):
+            self.assertEqual(hf.configuration()['default_backend'],'team')
+
     def test_hosted_requires_real_boolean_opt_in_and_known_model(self):
         b=approved();b['hf_credits_allowed']=False
         with self.assertRaisesRegex(ValueError,'disabled'):hf.validate_configuration(b)
