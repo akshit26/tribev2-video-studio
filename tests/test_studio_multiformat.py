@@ -5,7 +5,7 @@ import studio_script_writer as writer
 from studio_evaluation import validate_draft_score,score_draft_script
 
 GOOD=dict(has_cta=True,has_visual_demo=True,invented_experience=False,overall_score=87,critique='Specific hook, grounded demo and clear purchase action.')
-SHORT='Drain hair looks like a tiny swamp creature. A silicone catcher sits over the drain and catches loose hair. Lift it, remove the hair, rinse it, and reuse it. Buy a hair catcher for your shower.'
+SHORT='Drain hair looks like a tiny swamp creature. A silicone catcher sits over the drain and catches loose hair. When you are done, lift it, remove the hair, give it a rinse, and reuse it. Grab one before your next shower.'
 
 class MultiFormatTests(unittest.TestCase):
     def run_draft(self,kind='short',texts=None,scores=None):
