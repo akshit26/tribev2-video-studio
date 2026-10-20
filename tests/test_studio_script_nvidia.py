@@ -104,7 +104,7 @@ class NvidiaTests(unittest.TestCase):
         self.assertEqual(body['model'], n.MODEL)
         self.assertTrue(body['stream'])
         self.assertEqual(body['chat_template_kwargs'], {'enable_thinking':True})
-        self.assertEqual(body['reasoning_effort'],'medium')
+        self.assertEqual(body['reasoning_effort'],'high')
         self.assertEqual(req.get_header('Authorization'), 'Bearer nvapi-TEST')
         self.assertEqual(result, {'ok':True})
         self.assertEqual(usage, {'total_tokens':42})

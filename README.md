@@ -187,16 +187,15 @@ Gemma is not the default because its endpoint failed prior live checks. Local/HF
 writing still requires NVIDIA access for the new scoring gate. Scores are
 uncalibrated editorial judgments, not forecasts of views or purchases.
 
-NVIDIA team/fast calls have 180-second read/connect timeouts, one fresh-client
-retry for a connection disconnect, and a shared 180-second deadline per call.
-HTTP errors and timeouts do not trigger automatic retries. A draft, its scoring
-call, and the optional rewrite/scoring calls each have their own bounded request.
+NVIDIA team/fast drafting and scoring keep reasoning enabled. GPT-OSS and
+Nemotron use high reasoning effort and at least 32,768 output tokens; Gemma
+thinking is enabled with at least 16,384 tokens. Each API call has a 600-second
+read/connect timeout and total deadline, including one fresh-client connection
+retry. HTTP errors/timeouts are not automatically retried. Valid queued NVIDIA
+requests are polled by request ID without resubmitting. Reasoning is discarded
+before presenting the final script; no private reasoning is exported.
 
-
-Nemotron scoring and long drafts use `chat_template_kwargs.enable_thinking=false`.
-Short/Mid drafts use low reasoning with an 8,192-token allowance so reasoning
-cannot consume the old 4,096-token allowance before the script is returned.
-Long drafts receive up to 12,000 output tokens. The hosted endpoint rejected a minimal `json_schema`
+The hosted endpoint rejected a minimal `json_schema`
 response-format request with HTTP 500 during live testing, while the equivalent
 prompt-only request succeeded. The hosted `json_object` mode succeeded in the same check. It is used for
 Nemotron output, with strict script/score field and type validation in the app.

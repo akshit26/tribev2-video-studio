@@ -84,3 +84,14 @@ output uses 12,000 tokens with thinking disabled. Scoring also disables thinking
 Each team/fast request retains its 180-second total bound and one fresh-client
 connection retry. The entire multi-stage run can exceed 180 seconds. No automatic
 HTTP retries, extra voice-edit rewrites, or fabricated approvals were introduced.
+
+
+Reasoning policy update: reasoning remains enabled for script drafting and
+pre-scoring, including Long scripts and Gemma. NVIDIA team/fast calls now allow
+600 seconds per request, including the connection retry, with higher output
+budgets (32,768+ tokens; Gemma 16,384+). Nemotron and GPT-OSS use high reasoning.
+Valid pending requests are polled without resubmission. Tagged reasoning is
+removed before JSON validation and display. Single-field output, word limits,
+and the one-rewrite approval gate are unchanged.
+
+Verification for the reasoning update: 305 Studio tests passed, including pending-request polling and removal of tagged reasoning from final output. Multi-format browser checks passed. Server restarted after confirming all workers were idle.

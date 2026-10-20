@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v24-structured-multiformat-gate"
+WRITER_VERSION = "writer-v25-full-reasoning"
 SYSTEM = "Act as an expert direct-response video copywriter. Return exclusively a JSON object with one final_script string containing the complete continuous script. Follow the supplied duration rules. Do NOT invent a first-person product routine or personal creator experience. Do NOT make unsupported medical claims, guarantees, or touch-free promises. Strip out filler phrases like in this video or let's dive in."
 FORMATS = {
     'short': (35,60,30,"Write a 35-60 word script. Start immediately with a visual pattern interrupt hook under 12 words. Do NOT ask a question. Cut all context and deliver exactly one single narrative beat or product demo. Place a direct purchase CTA at the end."),

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
 NAME = "NVIDIA Nemotron 3 Ultra"
-PROFILE = "nemotron-medium-voice-edit-v5-mechanisms"
+PROFILE = "nemotron-high-voice-edit-v6-reasoning-600s"
 
 
 def nvidia_token(name="NVIDIA_API_KEY"):
@@ -40,15 +40,15 @@ def validate_configuration(brief):
 def chat_completion(token, model, system, prompt, max_tokens, temperature, preview=None):
     body = {"model": model, "messages": [
         {"role": "system", "content": system}, {"role": "user", "content": prompt}],
-        "temperature": temperature, "top_p": .95, "max_tokens": min(8192, max(4096, max_tokens + 1024)),
-        "reasoning_effort": "medium", "chat_template_kwargs": {"enable_thinking": True}, "stream": True}
+        "temperature": temperature, "top_p": .95, "max_tokens": min(65536, max(32768, max_tokens + 16384)),
+        "reasoning_effort": "high", "chat_template_kwargs": {"enable_thinking": True}, "stream": True}
     request = urllib.request.Request(ENDPOINT, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "text/event-stream"}, method="POST")
     content, usage, finished = "", {}, False
-    deadline = time.monotonic() + 240
+    deadline = time.monotonic() + 600
     size = 0
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
+        with urllib.request.urlopen(request, timeout=600) as response:
             if response.status != 200:
                 raise HostedWriterError("NVIDIA has not returned a completed response. Saved drafts are retained; retry manually.")
             for line in response:

@@ -4,7 +4,7 @@ import sys
 from studio_script_team import chat_json as chat_completion
 MODEL='nvidia/nemotron-3.5-super-vl-120b-a12b'
 NAME='Nemotron 3.5 Super (fast writer)'
-PROFILE='fast-text-v1'
+PROFILE='fast-text-v2-full-reasoning-600s'
 def nvidia_token():
     from studio_script_nvidia import nvidia_token as credential
     return credential('FAST_WRITER_API_KEY') or credential('GEMMA_API_KEY') or credential('NVIDIA_API_KEY') or credential('GPT_OSS_API_KEY')
