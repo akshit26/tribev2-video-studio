@@ -26,7 +26,7 @@ def stage_model(label):
 
 
 def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
-    """Use the provider SDK without retries; discard private reasoning output."""
+    """Retry one transient connection failure within the shared deadline; discard private reasoning."""
     import asyncio
     import httpx
     from openai import AsyncOpenAI,APIStatusError,APITimeoutError,APIConnectionError
@@ -59,7 +59,20 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
         if preview:preview(content)
         return parsed,response.usage.model_dump() if response.usage else {}
 
-    async def bounded():return await asyncio.wait_for(receive(),timeout=180)
+    async def resilient_receive():
+        for attempt in range(2):
+            try:
+                return await receive()
+            except APITimeoutError:
+                raise
+            except APIConnectionError:
+                if attempt:
+                    raise
+                # Transient TLS/socket disconnects can recover with a fresh client.
+                # Never retry HTTP errors or extend the total 180-second deadline.
+                await asyncio.sleep(1)
+
+    async def bounded():return await asyncio.wait_for(resilient_receive(),timeout=180)
     try:return asyncio.run(bounded())
     except (TimeoutError,APITimeoutError):
         raise HostedWriterError(f'{model}: NVIDIA did not return output within 180 seconds. Saved drafts are retained; retry later or select another engine.') from None

@@ -112,3 +112,17 @@ class RepairLifecycleTests(unittest.TestCase):
                 response=client.post('/api/scripts/'+sid+'/retry',json={'writer_backend':'fast'})
                 self.assertEqual(response.status_code,202,response.text)
                 self.assertEqual(response.json()['brief']['writer_backend'],'fast')
+
+class GroundedRoutineTests(unittest.TestCase):
+    def test_unsupplied_first_person_product_routine_is_flagged(self):
+        from studio_script_writer import claim_issues
+        brief={'topic':'Hair catcher','facts':'Reusable silicone hair catcher.','creator_experience':''}
+        self.assertTrue(claim_issues('I put a silicone hair catcher over the drain.',brief))
+        self.assertFalse(claim_issues('I hate touching drain hair.',brief))
+        brief['creator_experience']='I put a silicone hair catcher over the drain.'
+        self.assertFalse(claim_issues('I put a silicone hair catcher over the drain.',brief))
+
+    def test_dry_fingers_promise_requires_evidence(self):
+        from studio_script_writer import claim_issues
+        brief={'topic':'Hair catcher','facts':'Lift it, remove hair, rinse it.','creator_experience':''}
+        self.assertTrue(claim_issues('Your fingers stay dry.',brief))

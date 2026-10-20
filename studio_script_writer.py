@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v19-targeted-repairs"
+WRITER_VERSION = "writer-v21-grounded-product-outcomes"
 SYSTEM = "Act as an expert short-form video copywriter. Write a highly engaging, fast-paced 30-second video script based on the provided brief. Ensure the hook is under 12 words and immediately grabs attention without asking a question. Strip out all filler phrases like 'in this video,' 'let's dive in,' or 'without further ado.' Provide the entire script as a single, continuous block of text. You may include brief visual cues in brackets, like [Hold product to camera], inline with the dialogue. Output the final result exclusively in the `final_script` string field."
 SCRIPT_SCHEMA = {"type":"object","properties":{"final_script":{"type":"string","minLength":1,"maxLength":10000}},"required":["final_script"],"additionalProperties":False}
 
@@ -406,11 +406,14 @@ def claim_issues(content, brief):
         r"\bI\s+(?:quit|stopped|started|switched)\s+(?:using|scrubbing|washing|rinsing|applying|testing)\b|"
         r"\bmy (?:hair|skin|scalp)\b.{0,40}\b(?:smooth|clear|soft|better|worse|dry|itchy|flak(?:e|ing))\b.{0,15}\b(?:now|after|since)\b|"
         r"\bmy (?:hair|skin|scalp)\b.{0,20}\bnow\b.{0,25}\b(?:smooth|clear|soft|better|worse|dry|itchy|flak(?:e|ing))\b",content,re.I)
+    personal = personal or re.search(r"\bI (?:use|wear|apply)\b|\bI put (?:a|an|the|this|my)\b",content,re.I)
     if personal and not experience:
         issues.append("Invented personal usage or experience: no creator experience was supplied.")
     local_personal = re.search(r"मैंने.{0,30}(?:इस्तेमाल|लगाया|आज़माया|खरीदा)|\bmaine\b.{0,35}\b(?:use kiya|lagaya|try kiya|kharida)\b|\bmeri (?:skin|hair)\b.{0,30}\b(?:ab|pehle se)\b",content,re.I)
     if local_personal and not experience:
         issues.append("Invented Hindi/Hinglish product experience: no creator usage or results were supplied.")
+    if re.search(r"\b(?:your |my )?fingers (?:stay|remain) dry\b|\b(?:never|no need to) touch (?:the |wet )?hair\b",content,re.I) and not re.search(r"fingers (?:stay|remain) dry|no[- ]touch",facts+' '+experience,re.I):
+        issues.append('Unsupported no-touch or dry-fingers promise. Describe only the verified collection and cleaning steps.')
     adverse = re.search(r"\b(?:gave|left|made)\s+(?:me|my (?:hair|skin|scalp))\b.{0,45}\b(dry(?:ness)?|frizz(?:y)?|irritat(?:ed|ion)|itch(?:y|ing)?|rash)\b|\b(dried) (?:out )?my (?:hair|skin|scalp)\b",content,re.I)
     if adverse:
         stem = (adverse[1] or adverse[2]).lower()[:3]
@@ -897,11 +900,15 @@ def write_final_script(request,complete,save,progress,save_draft=None):
     brief=request['brief']
     context={key:brief.get(key,'') for key in ('topic','facts','audience','language','content_mode','content_format','persona','creator_experience','creative_notes','objective','cta')}
     context['learned_mechanisms']=brief.get('learned_mechanisms',[])
+    context['persona_direction']=persona_guidance(brief)
+    context['book_principles']=[card.get('principle','') for card in reference_cards(brief)[:3]]
     prompt=('Return exactly {"final_script":"one continuous block of script text"}. '
         'No title, scenes, timestamps, columns or extra JSON fields. '
         'Use the requested language and persona. Natural product integration; '
         'never invent claims, testing history, sensory observations or usage directions. '
         'For organic content, use a specific relatable situation or opinion, not a benefits pitch. '
+        'Without creator experience, never say I use, I put, I wear or describe your own product routine. '
+        'An opinion about an everyday annoyance is fine. Build one specific comic comparison or surprising observation, and pay it off at the end. '
         'When facts are only a promotional request, only product identity is verified. '
         'Do not promise cooling, hydration, gentleness, no tightness, results, pure ingredients or before/after changes without explicit proof. '
         'Use the exact supplied brand spelling. Prefer no bracketed cues unless explicitly requested; write spoken words. '

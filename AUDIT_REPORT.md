@@ -41,3 +41,18 @@ passed. Writer and optional review browser regressions passed; main remote
 report dashboard passed desktop/mobile checks with no JavaScript errors.
 Live upload reached NVIDIA but the first invocation returned a connection error;
 the retry completed successfully in 171.3 seconds with hook 55, pacing 70 and overall 40, plus timestamped advice. No scores or verdict were assigned on the failed invocation.
+
+
+Product persuasion audit (20 October 2026): full suite 305 tests passed; all four
+browser workflow checks passed; ten health/configuration/read endpoints returned
+HTTP 200. Live NVIDIA hair-catcher scripts took 69.7 seconds initially, 20.3
+seconds on retest, and 24.6 seconds for the requested revision. Final output was
+65 words, estimated 24-32 seconds, and appeared in the real writer UI with no JS
+errors. Real draft-save and export matched exactly.
+
+Fixed fail-fast connection handling with one fresh-client retry inside the total
+180-second deadline (no HTTP/timeout retries). Added grounded persona directions
+and selected book principles to the compact prompt. Found and blocked invented
+first-person product routines and unsupported dry-fingers/no-touch promises.
+A four-page PDF with exact generated script and test limitations is saved locally
+under results/audits/2026-10-20/. No conversion or virality probability was claimed.

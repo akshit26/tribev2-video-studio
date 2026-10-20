@@ -32,6 +32,25 @@ class TeamTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(team.HostedWriterError,'within 180 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
+    def test_connection_drop_retries_once_with_fresh_client(self):
+        calls=[]
+        def handler(request):
+            calls.append(request)
+            if len(calls)==1:
+                raise httpx.ConnectError('Temporary connection interruption')
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        self.assertEqual(self.invoke(handler)[0],{'ok':True})
+        self.assertEqual(len(calls),2)
+
+    def test_repeated_connection_failure_is_bounded(self):
+        calls=[]
+        def handler(request):
+            calls.append(request)
+            raise httpx.ConnectError('private diagnostic')
+        with self.assertRaisesRegex(team.HostedWriterError,'could not connect'):
+            self.invoke(handler)
+        self.assertEqual(len(calls),2)
+
     def test_truncated_completion_cannot_be_saved_as_valid(self):
         def handler(request):return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{}'},'finish_reason':'length'}]})
         with self.assertRaisesRegex(ValueError,'reached its limit'):self.invoke(handler)
