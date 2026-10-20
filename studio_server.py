@@ -155,6 +155,19 @@ def _process_job(job_id: str, video: Path, budget_mb: int, vision: bool, resume:
                 _active_job = None
 
 
+def _submit_job(job_id: str, *arguments) -> None:
+    """A failed executor submission must release the slot and retain the upload."""
+    global _active_job
+    try:
+        _executor.submit(_process_job,job_id,*arguments)
+    except Exception as exc:
+        with _lock:
+            _update_job(job_id,status='failed',stage='Could not start analysis',error=_safe_error(exc))
+            if _active_job==job_id:
+                _active_job=None
+        raise HTTPException(503,'Could not start analysis. Your upload is saved; retry when ready.') from None
+
+
 @app.middleware("http")
 async def local_requests_only(request: Request, call_next):
     # Prevent a remote webpage from submitting jobs to a localhost GPU service.
@@ -262,6 +275,7 @@ async def create_job(
     if busy:
         await video.close()
         raise HTTPException(409, "Another video is being analyzed. Wait for its report before uploading again.")
+    upload_saved=False
     try:
         directory = _job_dir(job_id)
         directory.mkdir(parents=True, exist_ok=True)
@@ -293,7 +307,8 @@ async def create_job(
         if brand_snapshot:
             _write_json(directory / "brand_context.json", snapshot(RESULTS_DIR, brand_id, exclude_fingerprint=digest.hexdigest()))
         _update_job(job_id, status="queued", stage="Preparing analysis", upload_bytes=size, video_hash=digest.hexdigest())
-        _executor.submit(_process_job, job_id, destination, budget_mb, vision)
+        upload_saved=True
+        _submit_job(job_id, destination, budget_mb, vision)
         return _load_job(job_id)
     except Exception as exc:
         error = str(exc.detail) if isinstance(exc, HTTPException) else _safe_error(exc)
@@ -302,8 +317,9 @@ async def create_job(
             if _active_job == job_id:
                 _active_job = None
         # A failed upload is not useful and can otherwise fill the disk on retries.
-        incomplete = _job_dir(job_id) / ("input" + extension)
-        incomplete.unlink(missing_ok=True)
+        if not upload_saved:
+            incomplete = _job_dir(job_id) / ("input" + extension)
+            incomplete.unlink(missing_ok=True)
         raise
     finally:
         await video.close()
@@ -322,7 +338,7 @@ def retry_job(job_id: str):
             raise HTTPException(409, "Only a failed analysis can be resumed, while Studio is idle.")
         _active_job = job_id
         _update_job(job_id, status="queued", stage="Resuming saved analysis", error=None)
-    _executor.submit(_process_job, job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
+    _submit_job(job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
     return _load_job(job_id)
 
 
@@ -371,7 +387,7 @@ def correct_transcript(job_id: str, changes: Annotated[dict, Body()]):
         _transcript_files(report["transcript"], directory)
         _active_job = job_id
         _update_job(job_id, status="queued", stage="Reviewing corrected transcript", error=None, progress=1)
-    _executor.submit(_process_job, job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
+    _submit_job(job_id, video, get_system_info()["default_budget_mb"], bool(job.get("vision", True)), True)
     return _load_job(job_id)
 
 

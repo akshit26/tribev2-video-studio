@@ -32,6 +32,9 @@ def main():
                 route.fulfill(status=202,json=state)
             else:route.fulfill(json=[])
         elif path==f'/api/scripts/{sid}':route.fulfill(json=state)
+        elif path==f'/api/scripts/{sid}/retry':
+            saved['retry']=req.post_data_json;state['status']='completed';state.pop('error',None)
+            route.fulfill(status=202,json=state)
         elif path==f'/api/scripts/{sid}/draft':
             if req.method=='PUT':saved['draft']=req.post_data_json;route.fulfill(json={'saved':True,'score_status':'Edited draft is unscored.'})
             elif 'draft' in saved:route.fulfill(json=saved['draft'])
@@ -77,6 +80,16 @@ def main():
         page.reload();page.wait_for_function("document.getElementById('finalScript').value==='First saved paragraph. Second saved paragraph.'")
         page.locator('#saveDraft').click();page.wait_for_function("document.getElementById('editStatus').textContent.includes('unscored')")
         assert saved['draft']=={'final_script':'First saved paragraph. Second saved paragraph.'}
+        # A provider outage must not silently switch a hosted writer to Local.
+        state['status']='failed';state['error']='NVIDIA is temporarily unavailable.'
+        state['brief']['writer_backend']='nvidia'
+        page.goto(BASE_URL+'/writer?script='+sid)
+        page.locator('#retryJob').wait_for(state='visible')
+        assert page.locator('#writerBackend').input_value()=='nvidia'
+        assert page.locator('#retryJob').inner_text()=='Retry saved job'
+        page.locator('#retryJob').click()
+        page.wait_for_function("document.getElementById('retryJob').hidden")
+        assert saved['retry']=={}
         output=ROOT/'results/writer-browser';output.mkdir(parents=True,exist_ok=True)
         page.screenshot(path=str(output/'desktop.png'),full_page=True)
         page.set_viewport_size({'width':390,'height':844})
@@ -85,6 +98,6 @@ def main():
         page.screenshot(path=str(output/'mobile.png'),full_page=True)
         browser.close()
     assert not errors,errors
-    print(json.dumps({'browser_errors':errors,'mobile_overflow':False,'single_textarea':True,'save_copy_export':True,'revisions':True,'legacy_read':True}))
+    print(json.dumps({'browser_errors':errors,'mobile_overflow':False,'single_textarea':True,'save_copy_export':True,'revisions':True,'legacy_read':True,'retry_keeps_engine':True}))
 
 if __name__=='__main__':main()

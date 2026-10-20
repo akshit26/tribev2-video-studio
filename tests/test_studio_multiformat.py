@@ -93,3 +93,161 @@ class MultiFormatTests(unittest.TestCase):
         payload=json.loads(call.call_args.args[3]);self.assertEqual(payload['script_text'],SHORT)
         self.assertIn('35-60',payload['duration_rules'])
         self.assertEqual(payload['spoken_word_count'],len(SHORT.split()))
+
+    def test_locally_invalid_first_draft_skips_remote_score_and_rewrites_once(self):
+        result,complete,score=self.run_draft(texts=['Buy it now.',SHORT],scores=[GOOD])
+        self.assertTrue(result['approved'])
+        self.assertEqual(complete.call_count,2)
+        self.assertEqual(score.call_count,1)
+        self.assertIsNone(result['gate_history'][0]['evaluation'])
+        self.assertEqual(result['gate_history'][0]['scoring_skipped'],'local_validation_failed')
+        self.assertIn('found 3',complete.call_args.args[0])
+
+    def test_two_locally_invalid_drafts_never_receive_an_invented_score(self):
+        result,complete,score=self.run_draft(texts=['Buy it now.']*2)
+        self.assertFalse(result['approved'])
+        score.assert_not_called()
+        self.assertIsNone(result['evaluation'])
+        self.assertIsNone(result['best']['assessment']['score'])
+        self.assertIn('local validation',result['best']['assessment']['critique'])
+        self.assertEqual(complete.call_count,2)
+
+    def test_wrong_language_cannot_pass_a_high_remote_score(self):
+        brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone insert catches loose hair. Lift, remove hair and rinse.',language='Hindi',content_duration='short'))
+        complete=Mock(return_value={'final_script':SHORT})
+        with patch('studio_pipeline.score_draft_script',return_value=GOOD) as score:
+            result=writer.write_final_script({'brief':brief},complete,lambda row:None,lambda *args:None)
+        self.assertFalse(result['approved'])
+        score.assert_not_called()
+        self.assertIn('Devanagari',' '.join(result['best']['assessment']['blockers']))
+
+    def test_hindi_sentence_punctuation_does_not_make_entire_script_the_hook(self):
+        brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone insert catches loose hair. Lift, remove hair and rinse.',language='Hindi',content_duration='short'))
+        text=('बालों का गुच्छा छोटे राक्षस जैसा लगता है। सिलिकॉन का यह कैचर नाली पर ढीले बाल पकड़ता है। '
+              'इसे उठाओ, बाल निकालो, पानी से धोओ और फिर इस्तेमाल करो। अपने शावर के लिए यह हेयर कैचर खरीदो।')
+        self.assertEqual(writer.final_script_issues({'final_script':text},brief),[])
+
+    def test_selected_hook_reaches_direct_writer_without_unsafe_claims(self):
+        brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone catcher catches loose hair.',content_duration='short'))
+        for hook in [dict(angle='Drain monster',spoken='The drain monster is collecting rent.',payoff='Give the hair somewhere to land.'),
+                     dict(angle='Routine confession',spoken='I use this every morning.',payoff='It is my personal routine.')]:
+            complete=Mock(return_value={'final_script':SHORT})
+            with patch('studio_pipeline.score_draft_script',return_value=GOOD):
+                writer.write_final_script({'brief':brief,'selected_hook':hook},complete,lambda row:None,lambda *args:None)
+            context=json.loads(complete.call_args.args[0].split(' BRIEF: ',1)[1])
+            self.assertEqual(context['selected_hook']['angle'],hook['angle'])
+            if hook['angle']=='Routine confession':
+                self.assertNotIn('spoken',context['selected_hook'])
+                self.assertIn('unsupported',context['selected_hook']['direction'])
+            else:self.assertEqual(context['selected_hook']['spoken'],hook['spoken'])
+
+    def test_provider_system_prompt_is_not_duplicated_in_user_message(self):
+        brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone catcher catches loose hair.',content_duration='short'))
+        complete=Mock(return_value={'final_script':SHORT})
+        complete.system_prompt=writer.system_prompt(brief)
+        with patch('studio_pipeline.score_draft_script',return_value=GOOD):
+            writer.write_final_script({'brief':brief},complete,lambda row:None,lambda *args:None)
+        self.assertNotIn(writer.SYSTEM,complete.call_args.args[0])
+        self.assertIn('creator_direction',complete.call_args.args[0])
+
+    def test_explicit_product_identity_conflict_stops_before_generation(self):
+        with self.assertRaisesRegex(ValueError,'Product mismatch'):
+            writer.brief_values(dict(topic='Neem facewash',facts='Plum goodness coconut shampoo',content_duration='mid'))
+        # Comparisons and multiproduct facts are valid creative briefs.
+        writer.brief_values(dict(topic='Facewash versus shampoo',facts='Shampoo and facewash use different labels.'))
+        writer.brief_values(dict(topic='Facewash',facts='Compare facewash with shampoo.'))
+        brief=dict(topic='Neem facewash',facts='Coconut shampoo',content_duration='mid')
+        complete=Mock()
+        with self.assertRaisesRegex(ValueError,'Product mismatch'):
+            writer.write_final_script({'brief':brief},complete,lambda row:None,lambda *args:None)
+        complete.assert_not_called()
+
+    def test_scorer_receives_brand_evidence_and_distinguishes_jokes_from_claims(self):
+        brand={'name':'Test brand','documents':{'product_facts':'Reusable silicone.'}}
+        with patch('studio_script_fast.nvidia_token',return_value='test-key'),patch('studio_script_team.chat_json',return_value=(GOOD,{})) as call:
+            score_draft_script(SHORT,{'facts':'Catches loose hair.','brand_context':brand},'short')
+        self.assertEqual(json.loads(call.call_args.args[3])['brief']['brand_context'],brand)
+        self.assertIn('comic comparisons are not literal product claims',call.call_args.args[2])
+
+    def test_cleanup_demo_preserves_supplied_hair_removal_step(self):
+        brief=writer.brief_values(dict(topic='Silicone hair catcher',facts='Catches loose hair. Lift, remove collected hair, rinse and reuse.',content_duration='short'))
+        missing=("Someone's hair is doing laps in my drain again. I am not reaching in there with my fingers like a raccoon. "
+                 'This silicone insert sits over the drain, catches loose hair, then you lift it, rinse it, reuse it. Tap to buy one now.')
+        self.assertIn('removing collected hair',' '.join(writer.claim_issues(missing,brief)))
+        corrected=missing.replace('lift it, rinse it, reuse it','lift it, remove the hair, rinse it, reuse it')
+        self.assertEqual(writer.claim_issues(corrected,brief),[])
+        complete=Mock(side_effect=[{'final_script':missing},{'final_script':corrected}])
+        with patch('studio_pipeline.score_draft_script',return_value=GOOD) as scorer:
+            result=writer.write_final_script({'brief':brief},complete,lambda row:None,lambda *args:None)
+        self.assertTrue(result['approved'])
+        self.assertEqual(scorer.call_count,1)
+        self.assertEqual(complete.call_count,2)
+
+    def test_cleanup_requirement_is_limited_to_explicit_instructions_and_demos(self):
+        brief=dict(topic='Hair catcher',facts='Catches loose hair. Lift, remove collected hair, rinse and reuse.')
+        self.assertEqual(writer.claim_issues('Loose hair has found its tiny landing pad. Buy the catcher.',brief),[])
+        unsupplied=dict(brief,facts='Silicone hair catcher catches loose hair.')
+        self.assertEqual(writer.claim_issues('Lift it, rinse it, reuse it.',unsupplied),[])
+        automatic=dict(brief,facts='Hair catcher. No need to remove hair manually.')
+        self.assertFalse(writer.hair_catcher_manual_cleanup(automatic))
+        self.assertIn('no-touch',' '.join(writer.claim_issues('Your fingers stay dry. No need to touch the hair.',brief)))
+
+    def test_saved_approval_is_revoked_for_current_product_conflict_without_mutating_archive(self):
+        brief=writer.brief_values(dict(topic='Facewash',facts='Facewash',content_duration='short'))
+        brief['facts']='Coconut shampoo'
+        original={'approved':True,'target_met':True,'quality_status':'ready','stop_reason':'gate_approved',
+                  'best':{'script':{'final_script':SHORT},'assessment':{'score':87,'blockers':[]}},'evaluation':dict(GOOD)}
+        before=copy.deepcopy(original)
+        with patch('studio_pipeline.score_draft_script') as scorer:
+            result=writer.recheck_saved_result(original,brief)
+        self.assertFalse(result['approved'])
+        self.assertFalse(result['target_met'])
+        self.assertIn('Product mismatch',' '.join(result['best']['assessment']['blockers']))
+        self.assertEqual(result['evaluation'],GOOD)
+        self.assertEqual(original,before)
+        scorer.assert_not_called()
+
+    def test_saved_cleanup_omission_cannot_retain_approval(self):
+        result,_,_=self.run_draft()
+        result['best']['script']['final_script']=SHORT.replace('remove the hair, ','')
+        checked=writer.recheck_saved_result(result,result['brief'])
+        self.assertFalse(checked['approved'])
+        self.assertIn('removing collected hair',' '.join(checked['best']['assessment']['blockers']))
+
+    def test_cleanup_accepts_plain_manual_removal_synonyms(self):
+        brief=writer.brief_values(dict(topic='Silicone hair catcher',facts='Reusable silicone insert catches loose hair. Lift, remove collected hair, rinse and reuse.',content_duration='short'))
+        text=('Those hair boulders in the drain, wow. Just slide this reusable silicone insert over the drain, it catches hair. '
+              'Lift it, dump the collected hair, rinse, then reuse immediately. Grab one today through the link in bio.')
+        for verb in ('dump','tip','toss','empty','clear','scrape'):
+            self.assertEqual(writer.final_script_issues({'final_script':text.replace('dump',verb)},brief),[])
+        self.assertIn('removing collected hair',' '.join(writer.claim_issues('Lift it; it automatically dumps the hair. Rinse and reuse.',brief)))
+
+    def test_typographic_dashes_do_not_undercount_real_benchmark_speech(self):
+        brief=writer.brief_values(dict(topic='Silicone hair catcher',facts='Reusable silicone insert catches loose hair. Lift, remove collected hair, rinse and reuse.',content_duration='short'))
+        text=('Picture this\u2014shower drain turning into a hair buffet. A slick silicone disc slides over the drain, scoops every stray strand. '
+              'Just lift it, dump the clogs, rinse it, and slap it back. Buy one.')
+        for dash in ('\u2013','\u2014'):
+            speech=text.replace('\u2014',dash)
+            self.assertEqual(writer.spoken_word_count(speech+' [Hold product]'),35)
+            issues=writer.final_script_issues({'final_script':speech},brief)
+            self.assertEqual(len(issues),1)
+            self.assertIn('Unsupported universal collection',issues[0])
+            self.assertEqual(writer.spoken_timing({'final_script':speech},brief)['words'],35)
+            with patch('studio_script_fast.nvidia_token',return_value='test-key'),patch('studio_script_team.chat_json',return_value=(GOOD,{})) as call:
+                score_draft_script(speech,brief,'short')
+            self.assertEqual(json.loads(call.call_args.args[3])['spoken_word_count'],35)
+        self.assertEqual(writer.claim_issues('Lift it, empty it, rinse it and reuse it.',brief),[])
+        self.assertIn('removing collected hair',' '.join(writer.claim_issues('Lift it; it will automatically dump the clogs. Rinse and reuse.',brief)))
+
+    def test_universal_collection_guarantee_is_blocked_without_overbroad_every_word_filter(self):
+        brief=dict(topic='Silicone hair catcher',facts='Silicone insert catches loose hair.')
+        self.assertIn('Unsupported universal collection',' '.join(writer.claim_issues('This disc scoops every stray strand.',brief)))
+        self.assertIn('Unsupported universal collection',' '.join(writer.claim_issues('This disc catches all the hair.',brief)))
+        self.assertEqual(writer.claim_issues('This disc catches loose hair. Every wash day has a horror-movie moment.',brief),[])
+        self.assertEqual(writer.claim_issues('Lift it and remove all the collected hair before rinsing.',brief),[])
+        supported=dict(brief,facts='Silicone insert catches all loose hair.')
+        self.assertEqual(writer.claim_issues('This disc catches every stray strand.',supported),[])
+        unrelated=dict(brief,facts='Cleaner removes every stain. Silicone insert catches loose hair.')
+        self.assertIn('Unsupported universal collection',' '.join(writer.claim_issues('This disc catches every hair.',unrelated)))
+        negated=dict(brief,facts='Silicone insert does not catch all loose hair.')
+        self.assertIn('Unsupported universal collection',' '.join(writer.claim_issues('This disc catches every hair.',negated)))

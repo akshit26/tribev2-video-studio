@@ -20,6 +20,22 @@ GOOD = dict(has_cta=True, has_visual_demo=True, invented_experience=False, overa
 
 
 class CognitiveTests(unittest.TestCase):
+    def test_human_correction_is_used_for_simulation_without_retranscription(self):
+        def metadata(*args):
+            yield {'duration':12}
+        transcript=dict(manually_corrected=True,language='hi',segments=[
+            dict(start=1,end=5,text='These are the corrected words.'),
+            dict(start=7,end=11,text='This ending is corrected too.')])
+        with tempfile.TemporaryDirectory() as folder:
+            output=Path(folder)
+            (output/'review_input.json').write_text(json.dumps({'transcript':transcript}))
+            with patch('imageio_ffmpeg.read_frames',side_effect=metadata),patch('studio_av_signals.transcribe_pacing') as asr,patch('studio_virality.simulate_cognitive_response',return_value=dict(COGNITIVE,attention_retention_score=85)) as simulate:
+                result=run_cognitive_audit(output/'input.mp4',output,[{'timestamp':1.}],lambda *args:None)
+            asr.assert_not_called()
+            self.assertEqual(simulate.call_args.args[1],'These are the corrected words. This ending is corrected too.')
+            self.assertEqual(result['pacing']['wpm'],50)
+            self.assertEqual(result['pacing']['words'],[])
+            self.assertEqual(result['pacing']['dead_air'],[dict(start=5,end=7)])
     def test_nemotron_selection_accepts_both_models_and_normalizes_short_ids(self):
         from studio_virality import cognitive_model, DEFAULT_COGNITIVE_MODEL
         for configured, expected in [('', DEFAULT_COGNITIVE_MODEL),

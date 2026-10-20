@@ -15,6 +15,30 @@ from studio_brand_output import brand_html
 
 
 class BrandTests(unittest.TestCase):
+    def test_cloud_reference_registration_snapshot_and_feedback_use_real_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);brand=brands.new_brand(root,'Creator product')
+            job_id='f'*32;output=root/job_id;output.mkdir()
+            report=dict(backend='nvidia',video={'name':'creator.mp4','duration_seconds':12},
+                result=dict(hook_score=85,pacing_score=80,overall_probability=82,
+                            timestamped_revision_advice='00:01: The label is visible.'),
+                pacing=dict(available=True,text='Real creator words.',language='hi',duration_seconds=12),
+                visual_frames=[dict(timestamp=1.,observation='Creator holds the product.'),
+                               dict(timestamp=90.,observation='Out-of-range observation.')],
+                context={'platform':'instagram'})
+            (output/'report.json').write_text(json.dumps(report),encoding='utf-8')
+            brands.register_reference(root,brand['id'],job_id,{'views':100})
+            references=brands.snapshot(root,brand['id'])['references']
+            self.assertEqual(len(references),1)
+            ref=references[0]
+            self.assertEqual(ref['score'],82)
+            self.assertEqual(ref['language'],'hi')
+            self.assertEqual(len(ref['excerpts']),2)
+            self.assertEqual(ref['excerpts'][0]['text'],'Real creator words.')
+            self.assertNotIn('Out-of-range',str(ref))
+            profile=brands.save_feedback(root,brand['id'],'e'*32,report,{'team_rating':90})
+            self.assertEqual(profile['feedback'][0]['base_score'],82)
+
     def test_text_docx_pdf_extraction_and_no_silent_truncation(self):
         from reportlab.pdfgen.canvas import Canvas
         self.assertEqual(brands.extract_document('notes.txt', 'தமிழ் हिन्दी'.encode()), 'தமிழ் हिन्दी')

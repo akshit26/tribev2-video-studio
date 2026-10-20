@@ -6,14 +6,29 @@ import openai
 import studio_script_team as team
 
 class TeamTransportTests(unittest.TestCase):
-    def invoke(self, handler, model=team.MODEL, preview=None):
+    def invoke(self, handler, model=team.MODEL, preview=None, effort='high'):
         real=openai.AsyncOpenAI
         def client(**kwargs):
             self.assertEqual(kwargs['timeout'].read,600)
             self.assertEqual(kwargs['timeout'].connect,600)
             return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         with patch('openai.AsyncOpenAI',side_effect=client):
-            return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview)
+            return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview,reasoning_effort=effort)
+
+    def test_short_drafts_keep_balanced_reasoning_and_reviewers_keep_full_effort(self):
+        with patch.object(team,'credential',return_value=''):
+            self.assertEqual(team.draft_reasoning_effort(2500,'Draft 1'),'medium')
+            self.assertEqual(team.draft_reasoning_effort(12000,'Draft 1'),'high')
+            self.assertEqual(team.draft_reasoning_effort(1400,'Critique 1'),'high')
+        with patch.object(team,'credential',return_value='high'):
+            self.assertEqual(team.draft_reasoning_effort(2500,'Draft 1'),'high')
+        seen=[]
+        def handler(request):
+            seen.append(json.loads(request.content))
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        self.invoke(handler,model='nvidia/nemotron-3.5-super-vl-120b-a12b',effort='medium')
+        self.assertEqual(seen[0]['reasoning_effort'],'medium')
+        self.assertTrue(seen[0]['chat_template_kwargs']['enable_thinking'])
 
     def test_sdk_final_content_only_and_high_reasoning(self):
         seen=[];previews=[]
@@ -22,7 +37,7 @@ class TeamTransportTests(unittest.TestCase):
             return httpx.Response(200,json={'id':'test','object':'chat.completion','created':0,'model':team.MODEL,'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}','reasoning_content':'PRIVATE'},'finish_reason':'stop'}],'usage':{'prompt_tokens':5,'completion_tokens':5,'total_tokens':10}})
         result,usage=self.invoke(handler,preview=previews.append)
         self.assertEqual(result,{'ok':True});self.assertEqual(usage['total_tokens'],10)
-        self.assertNotIn('PRIVATE',str(previews));self.assertFalse(seen[0]['stream'])
+        self.assertNotIn('PRIVATE',str(previews));self.assertTrue(seen[0]['stream'])
         self.assertEqual(seen[0]['reasoning_effort'],'high');self.assertEqual(seen[0]['temperature'],.7)
         self.assertEqual(seen[0]['max_tokens'],32768)
 
@@ -75,6 +90,78 @@ class TeamTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(team.HostedWriterError,'could not connect'):
             self.invoke(handler)
         self.assertEqual(len(calls),2)
+
+    def test_transient_service_error_recovers_with_one_fresh_client(self):
+        seen=[];notices=[]
+        def handler(request):
+            seen.append(request)
+            if len(seen)==1:return httpx.Response(500,json={'error':{'message':'private provider details'}})
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        def preview(content):pass
+        preview.status=notices.append
+        self.assertEqual(self.invoke(handler,preview=preview)[0],{'ok':True})
+        self.assertEqual(len(seen),2)
+        self.assertTrue(any('HTTP 500' in notice for notice in notices))
+        self.assertNotIn('private provider details',str(notices))
+
+    def test_service_retry_and_connection_retry_share_one_allowance(self):
+        seen=[]
+        def handler(request):
+            seen.append(request)
+            if len(seen)==1:return httpx.Response(503,json={})
+            raise httpx.ConnectError('Still unavailable')
+        with self.assertRaisesRegex(team.HostedWriterError,'could not connect'):
+            self.invoke(handler)
+        self.assertEqual(len(seen),2)
+
+    def test_buffered_request_emits_waiting_progress_without_private_reasoning(self):
+        import asyncio
+        notices=[]
+        async def handler(request):
+            await asyncio.sleep(.04)
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}','reasoning_content':'PRIVATE'},'finish_reason':'stop'}]})
+        def preview(content):pass
+        preview.status=notices.append
+        with patch.object(team,'HEARTBEAT_SECONDS',.01):
+            self.assertEqual(self.invoke(handler,preview=preview)[0],{'ok':True})
+        self.assertTrue(any('Waiting for NVIDIA output' in notice for notice in notices))
+        self.assertNotIn('PRIVATE',str(notices))
+
+    def test_streaming_collects_only_final_answer_and_usage(self):
+        previews=[]
+        chunks=[{'choices':[{'index':0,'delta':{'reasoning_content':'PRIVATE'}}]},
+                {'choices':[{'index':0,'delta':{'content':'{"ok":'}}]},
+                {'choices':[{'index':0,'delta':{'content':'true}'},'finish_reason':'stop'}]},
+                {'choices':[],'usage':{'prompt_tokens':3,'completion_tokens':5,'total_tokens':8}}]
+        def handler(request):
+            self.assertTrue(json.loads(request.content)['stream'])
+            body=''.join('data: '+json.dumps(chunk)+'\n\n' for chunk in chunks)+'data: [DONE]\n\n'
+            return httpx.Response(200,headers={'content-type':'text/event-stream'},content=body)
+        result,usage=self.invoke(handler,preview=previews.append)
+        self.assertEqual(result,{'ok':True})
+        self.assertEqual(usage['total_tokens'],8)
+        self.assertNotIn('PRIVATE',str(previews))
+
+    def test_incomplete_stream_retries_once_without_approving_partial_json(self):
+        calls=[]
+        def handler(request):
+            calls.append(request)
+            chunk={'choices':[{'index':0,'delta':{'content':'{"ok":true}'}}]}
+            if len(calls)==2:chunk['choices'][0]['finish_reason']='stop'
+            return httpx.Response(200,headers={'content-type':'text/event-stream'},content='data: '+json.dumps(chunk)+'\n\n')
+        self.assertEqual(self.invoke(handler)[0],{'ok':True})
+        self.assertEqual(len(calls),2)
+
+    def test_tagged_reasoning_inside_content_never_reaches_stream_preview(self):
+        previews=[]
+        chunks=[{'choices':[{'index':0,'delta':{'content':'<|channel>analysisPRIVATE {"final_script":"secret"}'}}]},
+                {'choices':[{'index':0,'delta':{'content':'<channel|>{"ok":true}'},'finish_reason':'stop'}]}]
+        def handler(request):
+            return httpx.Response(200,headers={'content-type':'text/event-stream'},content=''.join('data: '+json.dumps(c)+'\n\n' for c in chunks))
+        self.assertEqual(self.invoke(handler,preview=previews.append)[0],{'ok':True})
+        self.assertTrue(previews)
+        self.assertNotIn('PRIVATE',str(previews))
+        self.assertNotIn('secret',str(previews))
 
     def test_truncated_completion_cannot_be_saved_as_valid(self):
         def handler(request):return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{}'},'finish_reason':'length'}]})

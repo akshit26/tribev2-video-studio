@@ -174,6 +174,20 @@ class StudioServerTests(unittest.TestCase):
         fresh.assert_not_called()
         self.assertEqual(self.client.post(f"/api/jobs/{job_id}/retry").status_code, 409)
 
+    def test_executor_failure_preserves_upload_and_releases_busy_slot(self):
+        with patch.object(server._executor,'submit',side_effect=RuntimeError('Worker unavailable')):
+            response=self.upload()
+            self.assertEqual(response.status_code,503)
+        self.assertIsNone(server._active_job)
+        job_id=next(iter(server._jobs))
+        video=self.results/job_id/'input.mp4'
+        self.assertEqual(video.read_bytes(),b'test video')
+        self.assertEqual(self.client.get(f'/api/jobs/{job_id}').json()['status'],'failed')
+        with patch.object(server._executor,'submit',side_effect=RuntimeError('Worker unavailable')):
+            self.assertEqual(self.client.post(f'/api/jobs/{job_id}/retry').status_code,503)
+        self.assertIsNone(server._active_job)
+        self.assertTrue(video.is_file())
+
     def test_correcting_transcript_preserves_times_and_reuses_video(self):
         job_id = "c" * 32
         directory = self.results / job_id

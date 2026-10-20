@@ -7,9 +7,10 @@ from studio_script_hf import HostedWriterError
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
 NAME='GPT-OSS single-block writer'
-PROFILE='gptoss-gemma-v9-reasoning-600s'
+PROFILE='gptoss-gemma-v10-balanced-drafts-600s'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
 REQUEST_TIMEOUT_SECONDS=600
+HEARTBEAT_SECONDS=15
 
 
 def nvidia_token():return credential('GPT_OSS_API_KEY')
@@ -26,20 +27,32 @@ def stage_model(label):
     return GEMMA if label.startswith(('Critique','Hook critique')) else MODEL
 
 
-def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
+def draft_reasoning_effort(tokens,label):
+    """Keep reasoning on; reserve full effort for long drafts and reviewers."""
+    if not label.startswith(('Draft','Hook options')) or tokens>2500:
+        return 'high'
+    effort=credential('SCRIPT_DRAFT_REASONING_EFFORT') or 'medium'
+    if effort not in {'medium','high'}:
+        raise ValueError('SCRIPT_DRAFT_REASONING_EFFORT must be medium or high; reasoning stays enabled.')
+    return effort
+
+
+def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None,*,reasoning_effort='high'):
     """Retry one transient connection failure within the shared deadline; discard private reasoning."""
     import asyncio
     import httpx
     from openai import AsyncOpenAI,APIStatusError,APITimeoutError,APIConnectionError
     body={'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':prompt}],
         'temperature':max(0,min(1,temperature)),'top_p':.95 if model.startswith('meta/muse') else 1,
-        'max_tokens':8192 if model.startswith('meta/muse') else min(65536,max(32768,max_tokens+16384)),'stream':False}
-    if model==MODEL:body['reasoning_effort']='high'
+        'max_tokens':8192 if model.startswith('meta/muse') else min(65536,max(32768,max_tokens+16384)),
+        'stream':model in {MODEL,'nvidia/nemotron-3.5-super-vl-120b-a12b','nvidia/nemotron-3-ultra-550b-a55b'}}
+    if reasoning_effort not in {'medium','high'}:raise ValueError('Use medium or high reasoning effort.')
+    if model==MODEL:body['reasoning_effort']=reasoning_effort
     if model=='nvidia/nemotron-3-ultra-550b-a55b':
-        body['reasoning_effort']='high'
+        body['reasoning_effort']=reasoning_effort
         body['extra_body']={'chat_template_kwargs':{'enable_thinking':True}}
     if model=='nvidia/nemotron-3.5-super-vl-120b-a12b':
-        body.update(response_format={'type':'json_object'},reasoning_effort='high')
+        body.update(response_format={'type':'json_object'},reasoning_effort=reasoning_effort)
         body['extra_body']={'chat_template_kwargs':{'enable_thinking':True}}
     if model==GEMMA:
         body.update(max_tokens=max(16384,max_tokens),temperature=.5,frequency_penalty=0,presence_penalty=0,seed=0)
@@ -49,24 +62,55 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
     async def receive():
         async with AsyncOpenAI(base_url=ENDPOINT.rsplit('/',2)[0],api_key=token,
                 timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS,connect=REQUEST_TIMEOUT_SECONDS,write=REQUEST_TIMEOUT_SECONDS,pool=REQUEST_TIMEOUT_SECONDS),max_retries=0) as client:
-            raw=await client.chat.completions.with_raw_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'300'})
-            if raw.status_code==202:
-                from studio_gemma_video import request_id,poll_result,ViralityAPIError
-                try:
-                    try:pending=raw.http_response.json()
-                    except ValueError:pending=None
-                    identifier=request_id(raw.headers,pending)
-                except ViralityAPIError:
-                    raise HostedWriterError(f'{model} request is queued or incomplete without a valid request ID. Saved drafts are retained.') from None
-                try:data=await poll_result(token,identifier)
-                except ViralityAPIError as exc:raise HostedWriterError(str(exc)) from None
+            async with client.chat.completions.with_streaming_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'300'}) as raw:
+                if raw.status_code==202:
+                    from studio_gemma_video import request_id,poll_result,ViralityAPIError
+                    try:
+                        try:pending=await raw.json()
+                        except ValueError:pending=None
+                        identifier=request_id(raw.headers,pending)
+                    except ViralityAPIError:
+                        raise HostedWriterError(f'{model} request is queued or incomplete without a valid request ID. Saved drafts are retained.') from None
+                    try:data=await poll_result(token,identifier)
+                    except ViralityAPIError as exc:raise HostedWriterError(str(exc)) from None
+                elif raw.status_code!=200:
+                    raise HostedWriterError(f'{model} request is queued or incomplete (HTTP {raw.status_code}). No completed output was returned; saved drafts are retained.')
+                elif 'text/event-stream' in raw.headers.get('content-type',''):
+                    content_parts=[];finish=None;usage=None;size=0
+                    async for line in raw.iter_lines():
+                        size+=len(line)
+                        if size>4_000_000:raise HostedWriterError('NVIDIA stream exceeded its safe size limit. Saved drafts are retained.')
+                        if not line.startswith('data:'):continue
+                        payload=line[5:].strip()
+                        if payload=='[DONE]':break
+                        chunk=json.loads(payload)
+                        if chunk.get('error'):raise HostedWriterError('NVIDIA reported an error during streaming. Saved drafts are retained.')
+                        if chunk.get('usage'):usage=chunk['usage']
+                        for item in chunk.get('choices',[]):
+                            if item.get('index',0)!=0:continue
+                            delta=item.get('delta') or {}
+                            # Private reasoning is never buffered, previewed, or saved.
+                            text=delta.get('content')
+                            if isinstance(text,str) and text:
+                                content_parts.append(text)
+                                if preview:
+                                    public=''.join(content_parts)
+                                    if public.lstrip().startswith(('<|channel>thought','<|channel>analysis')):
+                                        _,separator,public=public.partition('<channel|>')
+                                        if not separator:continue
+                                    preview(public)
+                            if item.get('finish_reason'):finish=item['finish_reason']
+                    if finish is None:
+                        raise APIConnectionError(message='NVIDIA stream closed before completion',request=raw.http_response.request)
+                    data={'choices':[{'index':0,'message':{'role':'assistant','content':''.join(content_parts)},'finish_reason':finish}],'usage':usage}
+                else:
+                    # Some endpoints return a completed JSON response even when streaming was requested.
+                    data=await raw.json()
                 from openai.types.chat import ChatCompletion
-                try:response=ChatCompletion.model_validate(data)
-                except (ValueError,TypeError):raise HostedWriterError('NVIDIA returned an unreadable queued response. Saved drafts are retained.') from None
-            elif raw.status_code!=200:
-                raise HostedWriterError(f'{model} request is queued or incomplete (HTTP {raw.status_code}). No completed output was returned; saved drafts are retained.')
-            else:
-                response=raw.parse()
+                try:
+                    response=ChatCompletion.model_validate(dict(id='nvidia-response',created=0,model=model,object='chat.completion',**{k:v for k,v in data.items() if k not in {'id','created','model','object'}}))
+                except (ValueError,TypeError,AttributeError):
+                    raise HostedWriterError('NVIDIA returned an unreadable response. Saved drafts are retained.') from None
         if not response.choices:raise HostedWriterError(f'{model} returned no choices. Saved drafts are retained.')
         choice=response.choices[0]
         if choice.finish_reason=='length':raise ValueError('Model output reached its limit before completion; preserve the required script length.')
@@ -83,16 +127,38 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
         return parsed,response.usage.model_dump() if response.usage else {}
 
     async def resilient_receive():
+        def status(message):
+            callback=getattr(preview,'status',None)
+            if callback:callback(message)
+        async def monitored_receive():
+            task=asyncio.create_task(receive())
+            elapsed=0
+            try:
+                while True:
+                    done,_=await asyncio.wait({task},timeout=HEARTBEAT_SECONDS)
+                    if done:return await task
+                    elapsed+=HEARTBEAT_SECONDS
+                    status(f'Waiting for NVIDIA output ({elapsed:g}s); reasoning remains enabled')
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task,return_exceptions=True)
         for attempt in range(2):
             try:
-                return await receive()
+                return await monitored_receive()
             except APITimeoutError:
                 raise
+            except APIStatusError as exc:
+                if attempt or exc.status_code not in {500,502,503,504}:
+                    raise
+                status(f'NVIDIA HTTP {exc.status_code}; retrying once with a fresh connection')
+                await asyncio.sleep(1)
             except APIConnectionError:
                 if attempt:
                     raise
                 # Transient TLS/socket disconnects can recover with a fresh client.
-                # Never retry HTTP errors or extend the total 600-second deadline.
+                # Share the same retry allowance and original 600-second deadline.
+                status('NVIDIA connection interrupted; retrying once with a fresh connection')
                 await asyncio.sleep(1)
 
     async def bounded():return await asyncio.wait_for(resilient_receive(),timeout=REQUEST_TIMEOUT_SECONDS)
@@ -100,7 +166,9 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
     except (TimeoutError,APITimeoutError):
         raise HostedWriterError(f'{model}: NVIDIA did not return output within 600 seconds. Saved drafts are retained; retry later or select another engine.') from None
     except APIStatusError as exc:
-        hint={401:'API key rejected',403:'model access denied',404:'model unavailable',429:'rate limit or quota reached'}.get(exc.status_code,'provider request failed')
+        hint={401:'API key rejected',403:'model access denied',404:'model unavailable',410:'model retired',429:'rate limit or quota reached',
+              500:'NVIDIA service failed after one retry',502:'NVIDIA gateway failed after one retry',
+              503:'NVIDIA service unavailable after one retry',504:'NVIDIA gateway timed out after one retry'}.get(exc.status_code,'provider request failed')
         raise HostedWriterError(f'{model}: {hint} (HTTP {exc.status_code}). Saved drafts are retained.') from None
     except APIConnectionError:
         raise HostedWriterError(f'{model}: could not connect to NVIDIA. Saved drafts are retained.') from None
@@ -131,7 +199,8 @@ def complete_stage(token,model,system,prompt,tokens,temperature,preview,label):
             'Write spoken words only. Never invent product facts, efficacy, usage instructions or personal testing. '
             'Make the five premises genuinely different, specific to this product and naturally entertaining.')
     key=credential('GEMMA_API_KEY') if selected==GEMMA else nvidia_token()
-    return chat_json(key,selected,system,prompt,tokens,temperature,preview)
+    return chat_json(key,selected,system,prompt,tokens,temperature,preview,
+                     reasoning_effort=draft_reasoning_effort(tokens,label))
 
 
 def voice_edit(token,result,request):

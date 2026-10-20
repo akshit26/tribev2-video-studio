@@ -46,9 +46,8 @@ async function poll(){
     pollFailures=0;
     const elapsed=job.elapsed_seconds?` · ${Math.round(job.elapsed_seconds)}s elapsed`:'';
     status(job.stage+elapsed+(job.error?' · '+job.error:''),job.status==='failed');
-    if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
-    $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
-    $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
+    $('retryJob').textContent='Retry saved job';
+    $('retryJob').dataset.localRetry='false';
     $('retryJob').dataset.fastRetry='false';
     $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&(['needs_review','unavailable'].includes(job.hook_options?.review_status)||job.result?.quality_status==='needs_review'));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
@@ -63,7 +62,7 @@ async function poll(){
 
     current=job;lock(false);dirty=false;
     if(!job.hook_options&&!job.result)$('hooks').replaceChildren(make('p','No hooks are ready yet. Retry this saved job or start from the brief.','muted'));
-    if(job.result){renderResult(job.result);try{if(job.result.approved===false)throw new Error('Not approved');const draft=await api('/api/scripts/'+active+'/draft');renderScript(draft);$('score').hidden=true;$('editStatus').textContent='Saved manual edits loaded. This edited draft is unscored.';}catch(e){/* No manually edited draft is normal. */}}
+    if(job.result){renderResult(job.result);try{const draft=await api('/api/scripts/'+active+'/draft');renderScript(draft);showEditStatus('Saved manual edits loaded. This edited draft is unscored.');}catch(e){/* No manually edited draft is normal. */}}
     await loadSaved().catch(e=>status('Work is saved, but the saved-work list could not refresh. '+e.message,true));
   }catch(e){
     if(requestedId!==active)return;
@@ -87,7 +86,7 @@ function renderHooks(hooks,review={}){
 function updateScriptTiming(script){
   const brief=current?.brief||getBrief();
   $('performanceResult').textContent='';
-  const words=scriptText(script).replace(/\[[^\]]*\]/g,'').trim().split(/\s+/).filter(Boolean).length;
+  const words=scriptText(script).replace(/\[[^\]]*\]/g,'').replace(/[—–]/g,' ').trim().split(/\s+/).filter(Boolean).length;
   const language=(brief.language||'English').toLowerCase();
   const rates={english:[120,160,2],en:[120,160,2],hindi:[108,168,1.8],'hindi (roman)':[108,168,1.8],hinglish:[120,180,2]};
   const rate=rates[language];
@@ -98,12 +97,22 @@ function scriptText(script){return typeof script.final_script==='string'?script.
 function resizeScript(){const area=$('finalScript');area.style.height='auto';area.style.height=Math.max(220,area.scrollHeight)+'px';}
 function renderScript(script){
   editorBase={final_script:scriptText(script)};$('performanceResult').textContent='';
-  $('scriptTitle').textContent='Your script';$('finalScript').value=editorBase.final_script;
+  const rejected=current?.result?.approved===false;
+  $('scriptTitle').textContent=rejected?'Unapproved draft — revise before use':'Your script';$('finalScript').value=editorBase.final_script;
+  $('finalScript').setAttribute('aria-label',rejected?'Unapproved script draft':'Final script');
   $('revisionScope').replaceChildren(new Option('Whole script',''));
   updateScriptTiming(editorBase);resizeScript();
 }
 function editedScript(){return {final_script:$('finalScript').value};}
-$('finalScript').addEventListener('input',()=>{dirty=true;$('cognitiveMetrics').hidden=true;$('auditDownload').hidden=true;$('editStatus').textContent='Unsaved changes.';$('score').hidden=true;updateScriptTiming(editedScript());resizeScript();});
+function showEditStatus(message){
+  $('editStatus').textContent=message;
+  const rejected=current?.result?.approved===false;
+  $('score').hidden=!rejected;
+  if(rejected){$('score').replaceChildren(make('p','Unapproved manual draft. The original score does not apply to these edits.'));
+    const critique=current.result.evaluation?.critique||current.result.best?.assessment?.critique;
+    if(critique)$('score').append(make('p','Original feedback: '+critique));}
+}
+$('finalScript').addEventListener('input',()=>{dirty=true;$('cognitiveMetrics').hidden=true;$('auditDownload').hidden=true;showEditStatus('Unsaved changes. A fresh assessment is required.');updateScriptTiming(editedScript());resizeScript();});
 window.addEventListener('resize',resizeScript);
 function renderResult(result){
   $('resultSection').hidden=false;$('score').hidden=false;
@@ -118,13 +127,13 @@ function renderResult(result){
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
   if(assessment.score===null)line.replaceChildren(make('p',assessment.blockers?.length?'Draft saved. Revise the flagged issues before use.':'Script ready. Copy, edit or suggest changes below.'));
   if(result.evaluation){line.replaceChildren(make('strong',result.evaluation.overall_score+'/100','score-number'),make('p',result.approved?'Approved by pre-scoring gatekeeper':'Not approved - one rewrite limit reached'),make('p',result.evaluation.critique));}
-  else if(result.approved===false){line.replaceChildren(make('p','Not approved - scoring unavailable'),make('p',assessment.critique||''));}
+  else if(result.approved===false){line.replaceChildren(make('p','Not approved - review the flagged issues'),make('p',assessment.critique||''));}
   const rejected=result.approved===false;
-  if(rejected){$('finalScript').value='';$('scriptTiming').textContent='Rejected draft retained in saved work; no approved script to publish.';}
-  $('sceneEditor').hidden=rejected;
-  for(const id of ['saveDraft','reviseDraft','copyScript','textExport','printExport','applyChanges'])$(id).disabled=rejected;
+  $('sceneEditor').hidden=false;
+  for(const id of ['saveDraft','reviseDraft','applyChanges'])$(id).disabled=false;
+  for(const id of ['copyScript','textExport','printExport'])$(id).disabled=rejected;
   $('textExport').hidden=rejected;$('printExport').hidden=rejected;
-  $('score').replaceChildren(line);for(const issue of assessment.blockers||[])$('score').append(make('p','Needs revision: '+issue,'status')); $('editStatus').textContent='Best generated draft shown. Edits will need a fresh assessment.';
+  $('score').replaceChildren(line);for(const issue of assessment.blockers||[])$('score').append(make('p','Needs revision: '+issue,'status')); $('editStatus').textContent=rejected?'Unapproved draft retained for editing. Save changes or suggest a revision; export requires an approved revision.':'Best generated draft shown. Edits will need a fresh assessment.';
   $('history').replaceChildren();
   for(const round of result.history||[]){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScript(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
   for(const round of result.gate_history||[]){const d=make('details');d.append(make('summary',`Gate attempt ${round.attempt} | ${round.evaluation?.overall_score??'Unavailable'}`));if(round.evaluation)d.append(make('p',round.evaluation.critique));for(const issue of round.blockers||[])d.append(make('p',issue));$('history').append(d);}
@@ -132,7 +141,7 @@ function renderResult(result){
     if(assessment.requested_changes)$('revisionStatus').textContent+=' | '+assessment.requested_changes.reason;
     $('textExport').href='/api/scripts/'+active+'/export';$('printExport').href='/api/scripts/'+active+'/export?format=print';
 }
-async function saveDraft(){if(!current?.result)return;const response=await api('/api/scripts/'+active+'/draft',{method:'PUT',body:JSON.stringify(editedScript())});dirty=false;$('score').hidden=true;$('editStatus').textContent=response.score_status;return response;}
+async function saveDraft(){if(!current?.result)return;const response=await api('/api/scripts/'+active+'/draft',{method:'PUT',body:JSON.stringify(editedScript())});dirty=false;showEditStatus(response.score_status);return response;}
 async function loadSaved(){const rows=await api('/api/scripts');$('savedWork').replaceChildren();for(const row of rows.reverse()){const b=make('button',row.brief.topic+' · '+row.status);b.onclick=async()=>{if(busy)return;if(dirty&&!confirm('Discard unsaved edits and open this draft?'))return;active=row.id;shownHooks='';localStorage.setItem('creator-writer-active',active);setBrief(row.brief);$('resultSection').hidden=true;$('hooks').replaceChildren();await poll();};$('savedWork').append(b);}if(!rows.length)$('savedWork').append(make('p','Your hooks and scripts will appear here.','muted small'));}
 async function loadExperiments(){const rows=await api('/api/scripts/experiments');$('experiments').replaceChildren();for(const row of rows.reverse()){const d=make('details');d.append(make('summary',row.title+' · '+row.platform),make('p',row.hypothesis),make('p',row.observations),make('p',row.evidence_type,'muted small'));$('experiments').append(d);}}
 $('briefForm').onsubmit=e=>{e.preventDefault();start('script');};

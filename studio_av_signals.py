@@ -91,6 +91,25 @@ def transcribe_pacing(video, output, language='auto'):
     return result
 
 
+def corrected_transcript_pacing(transcript, duration):
+    """Honor human corrections without inventing individual word timestamps."""
+    segments=transcript.get('segments')
+    if not isinstance(segments,list) or not segments:
+        raise ValueError('Corrected transcript has no timestamped segments.')
+    interval_words=[]
+    for segment in segments:
+        if not isinstance(segment,dict) or not isinstance(segment.get('text'),str) or not segment['text'].strip():
+            raise ValueError('Corrected transcript has an invalid segment.')
+        interval_words.append(dict(start=segment.get('start'),end=segment.get('end'),word=segment['text'].strip()))
+    result=pacing_from_words(interval_words,duration)
+    count=sum(len(segment['word'].split()) for segment in interval_words)
+    result.update(word_count=count,wpm=round(count*60/duration,1),words=[],
+        segments=[dict(start=w['start'],end=w['end'],text=w['word']) for w in interval_words],
+        manually_corrected=True,language=transcript.get('language','auto'),model='human-corrected transcript',
+        note='Manually corrected transcript. WPM uses full clip duration; speech-free gaps use original segment boundaries. Individual word timestamps are unavailable.')
+    return result
+
+
 def voice_observations(samples, sample_rate=16000, seconds_per_span=10):
     import numpy as np
 

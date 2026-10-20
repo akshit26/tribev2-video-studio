@@ -28,7 +28,14 @@ window.renderCreative = function(report,id) {
         if(report.audit.pdf_file==='audit.pdf'){const link=document.createElement('a');link.textContent='Download 3-page audit PDF';link.href='/api/jobs/'+encodeURIComponent(id)+'/files/audit.pdf';link.className='button';panel.append(link);}
         if(report.audit.pdf_error)add('p',report.audit.pdf_error);
       }
-    }else add('p','Visual assessment only; cognitive/audio evidence is unavailable. Scores are uncalibrated editorial estimates.');
+    }else{
+      if(report.pacing?.available){
+        add('h3','Audio pacing: '+report.pacing.wpm+' WPM');
+        add('p',report.pacing.note||'Whisper transcript and pacing are available; cognitive simulation is unavailable.');
+        for(const gap of report.pacing.dead_air||[])add('p','Speech-free gap: '+gap.start.toFixed(1)+'–'+gap.end.toFixed(1)+'s');
+        add('p','Cognitive simulation is unavailable. Visual scores and audio measurements remain separate.');
+      }else add('p','Visual assessment only; cognitive/audio evidence is unavailable. Scores are uncalibrated editorial estimates.');
+    }
     const video=document.createElement('video');video.controls=true;video.preload='metadata';video.style.width='100%';video.src='/api/jobs/'+encodeURIComponent(id)+'/video';panel.append(video);
     const download=document.createElement('a');download.textContent='Download review JSON';download.href='/api/jobs/'+encodeURIComponent(id)+'/files/report.json';panel.append(download);
     return;

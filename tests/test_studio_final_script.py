@@ -30,6 +30,24 @@ class FinalScriptTests(unittest.TestCase):
         self.assertEqual(set(saved[0]['best']['script']),{'final_script'})
 
 class FinalScriptAPITests(unittest.TestCase):
+    def test_rejected_draft_can_be_edited_but_export_stays_blocked(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        import studio_server as server
+        from studio_script_writer import brief_values
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RESULTS_DIR',Path(tmp)),patch.object(server,'_active_job',None):
+            sid='e'*32;p=Path(tmp)/'_scripts'/sid;p.mkdir(parents=True)
+            brief=brief_values({'topic':'Notebook','facts':'80 blank pages','duration':30})
+            result={'approved':False,'best':{'script':{'final_script':TEXT},'assessment':{'score':72,'criteria':[],'blockers':['Sharpen the hook.']}},'history':[],'target_met':False,'stop_reason':'gate_rejected'}
+            (p/'state.json').write_text(json.dumps({'id':sid,'status':'completed','brief':brief,'stage':'Draft needs review'}))
+            (p/'script_result.json').write_text(json.dumps(result))
+            with TestClient(server.app,base_url='http://127.0.0.1:8765') as client:
+                edited={'final_script':TEXT+' A revised ending.'}
+                self.assertEqual(client.put('/api/scripts/'+sid+'/draft',json=edited).status_code,200)
+                self.assertEqual(client.get('/api/scripts/'+sid+'/draft').json(),edited)
+                self.assertEqual(client.get('/api/scripts/'+sid+'/export').status_code,409)
+                self.assertFalse(client.get('/api/scripts/'+sid).json()['result']['approved'])
+
     def test_save_reload_and_export_use_single_field(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient

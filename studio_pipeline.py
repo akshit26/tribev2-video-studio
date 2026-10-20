@@ -690,7 +690,7 @@ def extract_audit_frame(video, timestamp, destination):
 def run_cognitive_audit(video, output, visual_frames, progress, brief=None):
     """One audio/simulation pass; below 70, exactly one independently checked rewrite."""
     import imageio_ffmpeg
-    from studio_av_signals import transcribe_pacing
+    from studio_av_signals import transcribe_pacing, corrected_transcript_pacing
     from studio_virality import simulate_cognitive_response
     from studio_script_writer import system_prompt, FORMATS, validate_final_script, claim_issues
     from studio_script_team import chat_json, MODEL, nvidia_token
@@ -711,7 +711,15 @@ def run_cognitive_audit(video, output, visual_frames, progress, brief=None):
         raise ValueError('Visual evidence is missing or outside the uploaded video.')
     progress(45, 'Extracting audio and Whisper word timestamps')
     try:
-        pacing = transcribe_pacing(video, output)
+        try:
+            saved_input=json.loads((output / 'review_input.json').read_text(encoding='utf-8'))
+            corrected=saved_input.get('transcript',{})
+        except (OSError,ValueError,AttributeError):
+            corrected={}
+        if corrected.get('manually_corrected') is True:
+            pacing=corrected_transcript_pacing(corrected,duration)
+        else:
+            pacing = transcribe_pacing(video, output, (brief or {}).get('language', 'auto'))
     except Exception as exc:
         pacing = {'available': False, 'wpm': None, 'duration_seconds': duration,
                   'words': [], 'text': '', 'dead_air': [], 'note': 'Audio transcription unavailable: ' + type(exc).__name__}

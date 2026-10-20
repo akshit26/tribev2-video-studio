@@ -122,7 +122,8 @@ def run_hf_writer(output, request, progress, provider=None):
     validate_configuration(brief)
     backend = brief.get('writer_backend','nvidia') if provider else "huggingface"
     model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
-    signature = hashlib.sha256(json.dumps(["hosted-writer-v3", backend, model, getattr(provider, "PROFILE", None), SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
+    effort_profile=provider.draft_reasoning_effort(2500,'Draft 1') if provider and hasattr(provider,'draft_reasoning_effort') else None
+    signature = hashlib.sha256(json.dumps(["hosted-writer-v3", backend, model, getattr(provider, "PROFILE", None), effort_profile, SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
     prefix = backend if provider else "hf"
     path = output / (prefix + "_writer_checkpoint.json")
     try:
@@ -130,7 +131,7 @@ def run_hf_writer(output, request, progress, provider=None):
     except (OSError, ValueError):
         checkpoint = {}
     cache = CompletionCache(checkpoint, signature)
-    stats = {"backend": backend, "model": model, "calls_this_run": 0, "cache_hits": 0, "usage": []}
+    stats = {"backend": backend, "model": model, "calls_this_run": 0, "cache_hits": 0, "usage": [], "stage_timings": []}
     fraction = 0
 
     def report(value, stage):
@@ -138,7 +139,7 @@ def run_hf_writer(output, request, progress, provider=None):
         fraction = value
         progress(1 + 98*value, stage)
 
-    def complete(prompt, tokens, label):
+    def complete_call(prompt, tokens, label):
         if provider and hasattr(provider,'prepare_prompt'):
             prompt=provider.prepare_prompt(prompt,label,request)
         prompt_hash = hashlib.sha256((prompt + str(tokens)).encode()).hexdigest()
@@ -165,6 +166,7 @@ def run_hf_writer(output, request, progress, provider=None):
                 if paragraphs:
                     _write_json(output / "script_live.json", {"paragraphs": paragraphs, "validated": False, "reviewed": False})
                     last_preview = time.monotonic()
+            preview.status=lambda message:progress(1 + 98*fraction, f'{display}: {label} — {message}')
             if hasattr(provider,'complete_stage'):
                 result,usage=provider.complete_stage(token,model,SYSTEM,prompt,tokens,1 if creative else 0,preview,label)
             else:
@@ -194,6 +196,19 @@ def run_hf_writer(output, request, progress, provider=None):
         _write_json(output / (prefix + "_writer_usage.json"), stats)
         return result
 
+    def complete(prompt,tokens,label):
+        import time
+        started=time.monotonic()
+        before_hits=stats['cache_hits']
+        status='failed'
+        try:
+            result=complete_call(prompt,tokens,label)
+            status='completed'
+            return result
+        finally:
+            stats['stage_timings'].append({'stage':label,'elapsed_seconds':round(time.monotonic()-started,3),
+                'status':status,'cache_hit':stats['cache_hits']>before_hits})
+
     def reject(prompt,tokens,label):
         if provider and hasattr(provider,'prepare_prompt'):
             prompt=provider.prepare_prompt(prompt,label,request)
@@ -201,6 +216,7 @@ def run_hf_writer(output, request, progress, provider=None):
         cache.reject(label,prompt_hash)
         _write_json(path,cache.snapshot())
     complete.reject=reject
+    complete.system_prompt=SYSTEM
 
     try:
         run_writer(output, complete, report)

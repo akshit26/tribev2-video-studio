@@ -56,7 +56,7 @@
   window.appendBrandContext=async form=>{await saveDocuments();if(purpose.value==='reference'&&!selected.value)throw new Error('Choose a brand for this successful reference.');form.append('brand_id',selected.value);form.append('purpose',purpose.value);if(purpose.value==='reference')form.append('outcomes',JSON.stringify(referenceFields.read()));};
   window.setBrandBusy=busy=>{if(host)host.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=busy);};
   document.addEventListener('DOMContentLoaded',async()=>{
-    host=make('section',undefined,'panel brand-panel');host.append(make('h2','Brand context and successful references (optional)'),make('p','Save guidelines, product facts and past examples per brand. New uploads use the selected brand’s saved version. Files and analysis stay on this computer.','brief-note'));
+    host=make('section',undefined,'panel brand-panel');host.append(make('h2','Brand context and successful references (optional)'),make('p','Save guidelines, product facts and past examples per brand. New uploads use the selected brand’s saved version. Saved files stay on this computer; NVIDIA receives video and context for API analysis.','brief-note'));
     const label=make('label','Saved brand');selected=make('select');selected.id='brandSelect';selected.setAttribute('aria-label','Saved brand');label.append(selected);host.append(label);
     const createRow=make('div',undefined,'brand-grid'),name=field(createRow,'New brand name');name.maxLength=100;const create=make('button','Create brand','download');create.type='button';createRow.append(create);host.append(createRow);
     status=make('p','Loading brands…','brief-note');status.setAttribute('role','status');host.append(status);

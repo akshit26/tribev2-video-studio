@@ -108,6 +108,36 @@ def calibration(profile, exclude_job=None, exclude_fingerprint=None):
             "method": "Brand-specific team-rating correction: mean(team rating − uncalibrated brand overall) × n/(n+10), capped at ±10. Starts after 5 distinct non-reference videos with a rating spread of at least 20 points. Successful references and the video being assessed are excluded. Views and conversions are reported as observations, not training labels. This adapts scoring; it does not train model weights or establish predictive accuracy."}
 
 
+def reference_review(report):
+    """Normalize saved cloud evidence without inventing a semantic review."""
+    review=report.get('review',{})
+    if review.get('available') and review.get('sources'):
+        return review
+    if report.get('backend')!='nvidia':
+        return {}
+    from studio_gemma_video import validate_result
+    try:
+        scores=validate_result(json.dumps(report.get('result')))
+    except (ValueError,RuntimeError,TypeError):
+        return {}
+    pacing=report.get('pacing',{})
+    duration=report.get('video',{}).get('duration_seconds',pacing.get('duration_seconds'))
+    if type(duration) not in (int,float) or not math.isfinite(duration) or duration<=0:
+        return {}
+    sources=[]
+    if pacing.get('available') is True and isinstance(pacing.get('text'),str) and pacing['text'].strip():
+        sources.append(dict(id='S1',kind='speech',start=0.,end=duration,text=pacing['text']))
+    for frame in report.get('visual_frames',[])[:8]:
+        timestamp=frame.get('timestamp')
+        observation=frame.get('observation')
+        if (type(timestamp) in (int,float) and math.isfinite(timestamp) and 0<=timestamp<duration
+                and isinstance(observation,str) and observation.strip()):
+            sources.append(dict(id=f'V{len(sources)+1}',kind='visual',start=timestamp,
+                end=min(duration,timestamp+1),text='Visual-model observation (may be wrong): '+observation))
+    return dict(available=bool(sources),sources=sources,context=report.get('context',{}),
+                estimate={'score':scores['overall_probability']},dimensions=[])
+
+
 def snapshot(results, brand_id, exclude_job=None, exclude_fingerprint=None):
     profile = read_brand(results, brand_id)
     references = []
@@ -119,16 +149,16 @@ def snapshot(results, brand_id, exclude_job=None, exclude_fingerprint=None):
             report = json.loads((Path(results) / job_id / "report.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        review = report.get("review", {})
+        review = reference_review(report)
         if not review.get("available"):
             continue
         sources = review.get("sources", [])
         # Explicitly bounded excerpts, not a claim to inspect every reference frame.
         excerpts = sources[:2] + sources[-2:] if len(sources) > 4 else sources
         references.append({"job_id": job_id, "name": report["video"].get("name", "Reference"),
-                           "language": report.get("transcript", {}).get("language"),
+                           "language": report.get("transcript", {}).get("language",report.get('pacing',{}).get('language')),
                            "platform": review.get("context", {}).get("platform", "general"),
-                           "duration_seconds": report["video"]["duration_seconds"],
+                           "duration_seconds": report["video"].get("duration_seconds",report.get('pacing',{}).get('duration_seconds')),
                            "score": review.get("estimate", {}).get("score", review.get("overall_score")),
                            "dimensions": [{"key": d["key"], "grade": d["grade"]} for d in review.get("dimensions", [])],
                            "excerpts": [dict(s, text=s["text"][:600]) for s in excerpts],
@@ -147,8 +177,9 @@ def register_reference(results, brand_id, job_id, outcomes):
     if not re.fullmatch(r"[a-f0-9]{32}", job_id):
         raise ValueError("Choose a completed report ID.")
     report = json.loads((Path(results) / job_id / "report.json").read_text(encoding="utf-8"))
-    if not report.get("review", {}).get("available") or not report["review"].get("sources"):
-        raise ValueError("A reference needs a completed semantic review with a usable transcript.")
+    review=reference_review(report)
+    if not review.get("available") or not review.get("sources"):
+        raise ValueError("A reference needs a completed review with usable transcript or visual evidence.")
     info_path = Path(results) / job_id / "upload_info.json"
     info = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
     fingerprint = info.get("video_hash")
@@ -167,7 +198,7 @@ def save_feedback(results, brand_id, job_id, report, outcomes, purpose="candidat
     profile = read_brand(results, brand_id)
     row = dict(outcomes, job_id=job_id, purpose=purpose, video_hash=video_hash,
                base_score=report.get("review", {}).get("brand_review", {}).get("uncalibrated_overall",
-                   report.get("review", {}).get("estimate", {}).get("score")))
+                   report.get("review", {}).get("estimate", {}).get("score",report.get('result',{}).get('overall_probability'))))
     profile["feedback"] = [r for r in profile.get("feedback", []) if r["job_id"] != job_id] + [row]
     profile["feedback"] = profile["feedback"][-200:]
     for ref in profile.get("references", []):

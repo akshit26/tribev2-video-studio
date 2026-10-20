@@ -43,6 +43,11 @@ with sync_playwright() as p:
     assert '128.5' in page.locator('#remoteReview').inner_text()
     assert page.locator('#remoteReview textarea').get_attribute('readonly') is not None
     assert page.locator('#remoteReview a[href$="/files/audit.pdf"]').count() == 1
+    report.pop('cognitive');report.pop('audit')
+    report['pacing']['available']=True
+    page.evaluate('([report,id])=>window.renderCreative(report,id)',[report,SID])
+    assert '128.5 WPM' in page.locator('#remoteReview').inner_text()
+    assert 'Cognitive simulation is unavailable' in page.locator('#remoteReview').inner_text()
     page.set_viewport_size({'width': 390, 'height': 844})
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors, errors
