@@ -76,7 +76,9 @@ def install(server):
         import cv2
         from studio_pipeline import _write_json
         extension=Path(video.filename or '').suffix.lower()
-        if extension not in {'.mp4','.mov','.webm','.mkv','.avi'}:raise HTTPException(415,'Upload a video reference clip.')
+        if extension not in {'.mp4','.mov','.webm','.mkv','.avi'}:
+            await video.close()
+            raise HTTPException(415,'Upload a video reference clip.')
         uid=uuid.uuid4().hex;path=server.RESULTS_DIR/'_research_uploads'/uid;path.mkdir(parents=True)
         target=path/('input'+extension);size=0
         try:

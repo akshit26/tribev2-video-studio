@@ -40,7 +40,9 @@ def decision_html(report, directory=None):
     from studio_virality import check_virality
     virality=review.get('virality') or check_virality(review)
     estimate=review.get('estimate',{});interval=(brand or estimate).get('range')
-    source={s['id']:s for s in review.get('sources',[])}
+    # Older saved reports used S<n> speech IDs before storing explicit source kinds.
+    source={s['id']:dict(s,kind=s.get('kind') or ('speech' if re.fullmatch(r'S\d+',s['id']) else 'unknown'))
+            for s in review.get('sources',[]) if isinstance(s,dict) and isinstance(s.get('id'),str)}
     def span(ids):
         selected=[source[i] for i in ids if i in source]
         return f"{min(s['start'] for s in selected):.1f}–{max(s['end'] for s in selected):.1f}s" if selected else ''

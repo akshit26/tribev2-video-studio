@@ -901,11 +901,11 @@ def write_final_script(request,complete,save,progress,save_draft=None):
     def check(raw):
         result=validate_final_script(raw)
         spoken=re.sub(r'\[[^\]]*\]','',result['final_script']).strip()
-        opening=re.split(r'[.!??\n]',spoken,maxsplit=1)[0]
-        if '?' in spoken[:len(opening)+1] or '?' in opening:
+        opening=re.split(r'[.!?\u0964\uff1f\n]',spoken,maxsplit=1)[0]
+        if any(mark in spoken[:len(opening)+1] for mark in ('?', '\uff1f')):
             raise ValueError('The opening must grab attention without a question.')
         if len(opening.split())>=12:raise ValueError('Make the first sentence fewer than 12 words.')
-        if re.search(r"\b(in this video|let['?]s dive in|without further ado)\b",spoken,re.I):
+        if re.search(r"\b(in this video|let['\u2019]s dive in|without further ado)\b",spoken,re.I):
             raise ValueError('Remove filler phrases.')
         if not 55<=len(spoken.split())<=90:
             raise ValueError('Develop one complete 30-second script in 55-90 spoken words, without filler.')

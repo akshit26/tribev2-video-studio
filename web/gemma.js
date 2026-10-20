@@ -1,13 +1,13 @@
 ﻿"use strict";
 (() => {
-  let active=null,timer=null;
+  let active=null,timer=null,generation=0;
   const make=(tag,text)=>{const el=document.createElement(tag);el.textContent=text;return el;};
   async function api(id,method='GET'){
     const response=await fetch('/api/jobs/'+encodeURIComponent(id)+'/gemma-review',{method});
     const data=await response.json();if(!response.ok)throw new Error(data.detail||'Gemma review is unavailable.');return data;
   }
   window.renderGemmaVideoReview=async id=>{
-    active=id;clearTimeout(timer);
+    active=id;const version=++generation;clearTimeout(timer);
     let panel=document.getElementById('gemmaPanel');
     if(!panel){panel=make('section','');panel.id='gemmaPanel';panel.className='panel';document.getElementById('creative').prepend(panel);}
     panel.replaceChildren(make('h2','Gemma video review'),make('p','Send the original MP4 to NVIDIA for a separate AI assessment. Maximum 20 MB. Scores are uncalibrated editorial estimates, not measured odds of going viral.'));
@@ -23,8 +23,8 @@
       }
       if(running)timer=setTimeout(refresh,1500);
     }
-    async function refresh(){try{const state=await api(id);if(active===id)render(state);}catch(error){if(active===id){status.textContent=error.message;button.disabled=false;}}}
-    button.onclick=async()=>{button.disabled=true;clearTimeout(timer);try{const state=await api(id,'POST');if(active===id)render(state);}catch(error){if(active===id){status.textContent=error.message;button.disabled=false;}}};
+    async function refresh(){try{const state=await api(id);if(active===id&&generation===version)render(state);}catch(error){if(active===id&&generation===version){status.textContent=error.message;button.disabled=false;}}}
+    button.onclick=async()=>{button.disabled=true;clearTimeout(timer);output.replaceChildren();status.textContent='Starting Gemma video review...';try{const state=await api(id,'POST');if(active===id&&generation===version)render(state);}catch(error){if(active===id&&generation===version){status.textContent=error.message;button.disabled=false;}}};
     await refresh();
   };
 })();

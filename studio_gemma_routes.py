@@ -1,11 +1,26 @@
 ﻿"""Optional API-only Gemma review of the original uploaded video."""
 import asyncio
+import hashlib
 import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+
+
+def video_digest(video):
+    from studio_gemma_video import MAX_VIDEO_BYTES
+    try:
+        if video.stat().st_size>MAX_VIDEO_BYTES:return None
+        digest=hashlib.sha256();size=0
+        with video.open('rb') as stream:
+            while chunk:=stream.read(1024*1024):
+                size+=len(chunk)
+                if size>MAX_VIDEO_BYTES:return None
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:return None
 
 
 def install(server):
@@ -20,8 +35,19 @@ def install(server):
         with lock:
             try:state=json.loads(path.read_text(encoding='utf-8'))
             except (OSError,ValueError):state={'status':'not_started'}
+            if not isinstance(state,dict) or state.get('status') not in {'not_started','queued','running','completed','failed'}:
+                state={'status':'failed','error':'Saved Gemma assessment is unreadable. Retry the review.'}
             if state['status'] in {'queued','running'} and active!=job_id:
                 state={'status':'failed','error':'Gemma review was interrupted by a server restart. Retry when ready.'}
+            if state['status']=='completed':
+                try:
+                    from studio_gemma_video import validate_result,dashboard_state
+                    result=validate_result(json.dumps(state.get('result')))
+                    if not state.get('video_sha256') or video_digest(path.parent/'input.mp4')!=state['video_sha256']:
+                        raise ValueError('Recording changed')
+                    state['result']=result;state['dashboard']=dashboard_state(result)
+                except (ValueError,RuntimeError,TypeError):
+                    state={'status':'failed','error':'Saved Gemma assessment does not match the current video or has invalid scores. Analyze this recording again.'}
             state['configured']=bool(nvidia_token('GEMMA_API_KEY') or nvidia_token())
             if state.get('started_at') and state['status']=='running':
                 state['elapsed_seconds']=round(time.time()-state['started_at'],1)
@@ -30,11 +56,15 @@ def install(server):
         nonlocal active
         from studio_pipeline import _write_json
         from studio_gemma_video import analyze_virality,dashboard_state,MODEL
-        start=time.time();path=path_for(job_id)
+        start=time.time();path=server._job_dir(job_id)/'gemma_review.json'
         state={'status':'running','started_at':start,'model':MODEL}
         try:
             _write_json(path,state)
+            digest=video_digest(video)
+            if not digest:raise ValueError('Original MP4 is missing or exceeds the review size limit.')
             result=asyncio.run(analyze_virality(video))
+            if video_digest(video)!=digest:raise ValueError('The MP4 changed during review. Analyze the current recording again.')
+            state['video_sha256']=digest
             state.update(status='completed',result=result,dashboard=dashboard_state(result))
         except Exception as exc:
             state.update(status='failed',error=server._safe_error(exc))

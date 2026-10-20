@@ -8,7 +8,8 @@ def handle(route):
     if route.request.method=='POST':
         submitted.append(1)
         if len(submitted)==1:state.update(status='running',elapsed_seconds=2)
-        else:state.clear();state.update(status='failed',configured=True,error='NVIDIA unavailable')
+        else:
+            route.fulfill(status=503,json={'detail':'NVIDIA unavailable'});return
     route.fulfill(status=202 if route.request.method=='POST' else 200,json=state)
 with sync_playwright() as p:
     browser=p.chromium.launch(channel='msedge',headless=True,args=['--disable-gpu'])

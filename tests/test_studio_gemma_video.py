@@ -51,3 +51,22 @@ class GemmaVideoTests(unittest.TestCase):
                 self.assertEqual(c.post('/api/jobs/invalid/gemma-review').status_code,404)
                 (directory/'input.mp4').unlink()
                 self.assertEqual(c.post('/api/jobs/'+sid+'/gemma-review').status_code,422)
+
+class GemmaProvenanceAuditTests(unittest.TestCase):
+    def test_replaced_recording_and_corrupt_metadata_have_no_score(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder,patch.object(server,'RESULTS_DIR',Path(folder)),patch.object(server,'_jobs',{}):
+            sid='a'*32;directory=Path(folder)/sid;directory.mkdir()
+            (directory/'job.json').write_text(json.dumps({'id':sid,'status':'completed'}))
+            video=directory/'input.mp4';video.write_bytes(MP4)
+            state={'status':'completed','result':RESULT,'video_sha256':hashlib.sha256(MP4).hexdigest()}
+            path=directory/'gemma_review.json';path.write_text(json.dumps(state))
+            with TestClient(server.app,base_url='http://127.0.0.1:8765') as c:
+                url='/api/jobs/'+sid+'/gemma-review'
+                self.assertEqual(c.get(url).json()['status'],'completed')
+                video.write_bytes(MP4+b'changed')
+                result=c.get(url).json();self.assertEqual(result['status'],'failed');self.assertNotIn('result',result)
+                video.write_bytes(MP4)
+                for corrupted in [[],{},dict(state,result={'hook_score':100})]:
+                    path.write_text(json.dumps(corrupted));result=c.get(url).json()
+                    self.assertEqual(result['status'],'failed');self.assertNotIn('result',result)

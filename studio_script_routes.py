@@ -26,6 +26,10 @@ def install(server):
             state = json.loads((path / "state.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise HTTPException(404, "Script not found.") from None
+        if (not isinstance(state,dict) or state.get('status') not in {'queued','running','completed','failed'}
+                or not isinstance(state.get('brief'),dict) or state.get('id')!=script_id
+                or not isinstance(state.get('stage'),str)):
+            raise HTTPException(404,'Saved script metadata is damaged. Other saved work is unaffected.')
         with server._lock:
             if state["status"] in {"queued", "running"} and server._active_job != script_id:
                 state.update(status="failed", stage="Interrupted by server restart", error="Saved drafts are preserved. Start a new revision to continue.")
@@ -35,12 +39,18 @@ def install(server):
             state['elapsed_seconds']=round(max(0,time.time()-state['started_at']),1)
         for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result"), ("tribe_rating.json", "tribe_recording_rating")]:
             try:
-                state[key] = json.loads((path / name).read_text(encoding="utf-8"))
+                loaded=json.loads((path / name).read_text(encoding="utf-8"))
+                if not isinstance(loaded,dict):continue
+                if key=='result' and (not isinstance(loaded.get('best'),dict)
+                        or not isinstance(loaded['best'].get('script'),dict)
+                        or not isinstance(loaded['best'].get('assessment'),dict)):continue
+                state[key]=loaded
             except (OSError, ValueError):
                 pass
         if "result" not in state and (path / "script_draft.json").exists():
             try:
                 draft = json.loads((path / "script_draft.json").read_text(encoding="utf-8"))
+                if not isinstance(draft,dict):raise ValueError("Saved draft is damaged.")
                 state["result"] = {"brief": state["brief"], "best": {"script": draft, "assessment": {
                     "score": None, "criteria": [], "unsupported_claims": [], "blockers": draft.get("missing_proof", []),
                     "method": "Saved draft; no valid automated score is available."}}, "history": [],

@@ -48,3 +48,25 @@ class FinalScriptAPITests(unittest.TestCase):
                 self.assertEqual(client.get('/api/scripts/'+sid+'/draft').json(),edited)
                 self.assertEqual(client.get('/api/scripts/'+sid+'/export').text,edited['final_script'])
                 self.assertIn('[Smile]',client.get('/api/scripts/'+sid+'/export?format=print').text)
+
+class FinalScriptAuditTests(unittest.TestCase):
+    def run_text(self,content,language='English'):
+        request={'brief':{'topic':'Notebook','facts':'80 blank pages','duration':30,'language':language}}
+        return write_final_script(request,lambda *args:{'final_script':content},lambda row:None,lambda *args:None)
+    def test_hindi_danda_is_a_sentence_boundary(self):
+        content='\u092e\u0947\u0930\u0940 \u092c\u093e\u0924\u0964 '+(' \u0935\u093f\u091a\u093e\u0930'*60)
+        self.assertIn('final_script',self.run_text(content,'Hindi')['best']['script'])
+    def test_curly_apostrophe_filler_and_fullwidth_question_are_rejected(self):
+        for content in ['Let\u2019s dive in. '+TEXT,'Why\uff1f '+TEXT]:
+            with self.assertRaises(ValueError):self.run_text(content)
+    def test_corrupt_saved_metadata_cannot_break_saved_work_listing(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        import studio_server as server
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RESULTS_DIR',Path(tmp)):
+            sid='f'*32;path=Path(tmp)/'_scripts'/sid;path.mkdir(parents=True)
+            with TestClient(server.app,base_url='http://127.0.0.1:8765') as client:
+                for invalid in [[],{}, {'status':'completed','brief':None}, {'status':'completed','brief':{}}]:
+                    (path/'state.json').write_text(json.dumps(invalid))
+                    self.assertEqual(client.get('/api/scripts/'+sid).status_code,404)
+                    self.assertEqual(client.get('/api/scripts').status_code,200)
