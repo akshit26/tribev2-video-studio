@@ -39,6 +39,9 @@ class TeamTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(team.HostedWriterError,'HTTP 429'):self.invoke(handler,team.GEMMA)
         self.assertEqual(len(seen),1);self.assertEqual(seen[0]['chat_template_kwargs'],{'enable_thinking':False})
         self.assertEqual([m['role'] for m in seen[0]['messages']],['user'])
+        self.assertEqual(seen[0]['max_tokens'],1200)
+        self.assertEqual(seen[0]['temperature'],.5)
+        self.assertEqual(seen[0]['seed'],0)
 
     def test_queued_request_is_not_parsed_as_corrupt_json(self):
         def handler(request):return httpx.Response(202,json={'requestId':'test'})

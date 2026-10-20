@@ -7,7 +7,7 @@ from studio_script_hf import HostedWriterError
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
 NAME='GPT-OSS draft / Gemma review'
-PROFILE='gptoss-gemma-v4-compact-hooks'
+PROFILE='gptoss-gemma-v5-bounded-review'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
 
 
@@ -35,6 +35,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
         'max_tokens':8192 if model.startswith('meta/muse') else 4096,'stream':False}
     if model==MODEL:body['reasoning_effort']='low'
     if model==GEMMA:
+        body.update(max_tokens=min(2048,max(1024,max_tokens)),temperature=.5,frequency_penalty=0,presence_penalty=0,seed=0)
         body['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
         body['messages']=[{'role':'user','content':system+'\n\nTASK:\n'+prompt}]
 
