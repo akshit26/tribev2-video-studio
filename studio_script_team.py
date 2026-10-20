@@ -35,6 +35,9 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
         'temperature':max(0,min(1,temperature)),'top_p':.95 if model.startswith('meta/muse') else 1,
         'max_tokens':8192 if model.startswith('meta/muse') else min(65536,max(32768,max_tokens+16384)),'stream':False}
     if model==MODEL:body['reasoning_effort']='high'
+    if model=='nvidia/nemotron-3-ultra-550b-a55b':
+        body['reasoning_effort']='high'
+        body['extra_body']={'chat_template_kwargs':{'enable_thinking':True}}
     if model=='nvidia/nemotron-3.5-super-vl-120b-a12b':
         body.update(response_format={'type':'json_object'},reasoning_effort='high')
         body['extra_body']={'chat_template_kwargs':{'enable_thinking':True}}

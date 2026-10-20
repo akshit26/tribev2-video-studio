@@ -2,6 +2,23 @@
 
 from __future__ import annotations
 
+COGNITIVE_MODELS = {
+    'nvidia/nemotron-3.5-super-vl-120b-a12b',
+    'nvidia/nemotron-3-ultra-550b-a55b',
+}
+DEFAULT_COGNITIVE_MODEL = 'nvidia/nemotron-3.5-super-vl-120b-a12b'
+
+
+def cognitive_model():
+    from studio_script_nvidia import nvidia_token
+    # This accessor reads environment variables and the ignored project .env.
+    value = nvidia_token('COGNITIVE_MODEL') or DEFAULT_COGNITIVE_MODEL
+    if '/' not in value:
+        value = 'nvidia/' + value
+    if value not in COGNITIVE_MODELS:
+        raise ValueError('Choose Nemotron 3.5 Super VL or Nemotron 3 Ultra for COGNITIVE_MODEL.')
+    return value
+
 
 def validate_cognitive_response(raw, duration):
     import math
@@ -35,13 +52,12 @@ def simulate_cognitive_response(visual_frame_data, transcript, pacing, brief=Non
     """Cloud reasoning over VLM observations and ASR; no claim to measure minds."""
     import json
     import math
-    import os
     from studio_script_team import chat_json
     from studio_script_nvidia import nvidia_token
     token = nvidia_token('COGNITIVE_API_KEY') or nvidia_token()
     if not token:
         raise ValueError('Configure NVIDIA_API_KEY for the cognitive simulator.')
-    model = os.environ.get('COGNITIVE_MODEL', 'nvidia/nemotron-3.5-super-vl-120b-a12b')
+    model = cognitive_model()
     system = ('Act as a cognitive psychology and viral marketing simulator. Analyze this video\'s visual pacing, '
         'spoken transcript, and audio WPM. Map the audience\'s psychological reaction and output a JSON object with: '
         'attention_retention_score (integer 0-100), emotional_arousal_state (identify primary high/low arousal emotion), '

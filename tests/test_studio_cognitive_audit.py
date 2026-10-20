@@ -20,6 +20,17 @@ GOOD = dict(has_cta=True, has_visual_demo=True, invented_experience=False, overa
 
 
 class CognitiveTests(unittest.TestCase):
+    def test_nemotron_selection_accepts_both_models_and_normalizes_short_ids(self):
+        from studio_virality import cognitive_model, DEFAULT_COGNITIVE_MODEL
+        for configured, expected in [('', DEFAULT_COGNITIVE_MODEL),
+                ('nemotron-3-ultra-550b-a55b', 'nvidia/nemotron-3-ultra-550b-a55b'),
+                ('nvidia/nemotron-3.5-super-vl-120b-a12b', DEFAULT_COGNITIVE_MODEL)]:
+            with patch('studio_script_nvidia.nvidia_token', return_value=configured):
+                self.assertEqual(cognitive_model(), expected)
+        with patch('studio_script_nvidia.nvidia_token', return_value='retired-model'):
+            with self.assertRaises(ValueError):
+                cognitive_model()
+
     def test_word_pacing_counts_full_duration_and_only_gaps_over_one_second(self):
         result = pacing_from_words([dict(start=1, end=2, word='One'), dict(start=3.01, end=4, word='two')], 6)
         self.assertEqual(result['wpm'], 20)
@@ -36,7 +47,7 @@ class CognitiveTests(unittest.TestCase):
                 validate_cognitive_response(dict(COGNITIVE, **update), 4)
 
     def test_cloud_receives_actual_transcript_and_frame_observations(self):
-        with patch('studio_script_nvidia.nvidia_token', return_value='test'), patch('studio_script_team.chat_json', return_value=(copy.deepcopy(COGNITIVE), {})) as api:
+        with patch('studio_script_nvidia.nvidia_token', side_effect=lambda name='NVIDIA_API_KEY': '' if name=='COGNITIVE_MODEL' else 'test'), patch('studio_script_team.chat_json', return_value=(copy.deepcopy(COGNITIVE), {})) as api:
             result = simulate_cognitive_response([dict(timestamp=.5, observation='Static label')], 'Actual words', {'duration_seconds': 4, 'wpm': 30, 'words': []})
         payload = json.loads(api.call_args.args[3])
         self.assertEqual(payload['transcript'], 'Actual words')

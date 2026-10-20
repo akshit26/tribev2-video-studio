@@ -48,6 +48,15 @@ class TeamTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(team.HostedWriterError,'within 180 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
+    def test_ultra_keeps_reasoning_enabled(self):
+        seen=[]
+        def handler(request):
+            seen.append(json.loads(request.content))
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        self.assertEqual(self.invoke(handler,model='nvidia/nemotron-3-ultra-550b-a55b')[0],{'ok':True})
+        self.assertEqual(seen[0]['reasoning_effort'],'high')
+        self.assertEqual(seen[0]['chat_template_kwargs'],{'enable_thinking':True})
+
     def test_connection_drop_retries_once_with_fresh_client(self):
         calls=[]
         def handler(request):
