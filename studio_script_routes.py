@@ -29,6 +29,8 @@ def install(server):
         with server._lock:
             if state["status"] in {"queued", "running"} and server._active_job != script_id:
                 state.update(status="failed", stage="Interrupted by server restart", error="Saved drafts are preserved. Start a new revision to continue.")
+                from studio_pipeline import _write_json
+                _write_json(path / "state.json", state)
         for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result"), ("tribe_rating.json", "tribe_recording_rating")]:
             try:
                 state[key] = json.loads((path / name).read_text(encoding="utf-8"))
@@ -114,11 +116,11 @@ def install(server):
 
     @app.get("/writer")
     def page():
-        return FileResponse(server.ROOT / "web/writer.html")
+        return FileResponse(server.ROOT / "web/writer.html", headers={"Cache-Control":"no-store"})
 
     @app.get("/writer.js")
     def javascript():
-        return FileResponse(server.ROOT / "web/writer.js", media_type="text/javascript")
+        return FileResponse(server.ROOT / "web/writer.js", media_type="text/javascript", headers={"Cache-Control":"no-store"})
 
     @app.get("/writer.css")
     def stylesheet():

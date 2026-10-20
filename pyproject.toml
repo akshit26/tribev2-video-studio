@@ -39,6 +39,7 @@ Repository = "https://github.com/facebookresearch/tribev2"
 
 [project.optional-dependencies]
   studio = [
+    "openai>=1.60,<3",
     "httpx>=0.27,<1",
     "yt-dlp>=2026.8.19",
     "rapidocr-onnxruntime==1.4.4",

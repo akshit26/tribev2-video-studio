@@ -2,44 +2,44 @@
 import unittest
 from unittest.mock import patch
 import httpx
+import openai
 import studio_script_team as team
 
 class TeamTransportTests(unittest.TestCase):
     def invoke(self, handler, model=team.MODEL, preview=None):
-        real=httpx.AsyncClient
-        def client(**kwargs):return real(transport=httpx.MockTransport(handler),**kwargs)
-        with patch('httpx.AsyncClient',side_effect=client):
+        real=openai.AsyncOpenAI
+        def client(**kwargs):return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
+        with patch('openai.AsyncOpenAI',side_effect=client):
             return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview)
 
-    def test_streams_content_only_and_limits_reasoning(self):
+    def test_sdk_final_content_only_and_low_reasoning(self):
         seen=[];previews=[]
         def handler(request):
             seen.append(json.loads(request.content))
-            chunks=[{'choices':[{'delta':{'reasoning_content':'PRIVATE REASONING'},'finish_reason':None}]},
-                    {'choices':[{'delta':{'content':'{"ok":true}'},'finish_reason':None}]},
-                    {'choices':[{'delta':{},'finish_reason':'stop'}],'usage':{'total_tokens':10}}]
-            return httpx.Response(200,text=''.join('data: '+json.dumps(c)+'\n\n' for c in chunks)+'data: [DONE]\n\n')
+            return httpx.Response(200,json={'id':'test','object':'chat.completion','created':0,'model':team.MODEL,'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}','reasoning_content':'PRIVATE'},'finish_reason':'stop'}],'usage':{'prompt_tokens':5,'completion_tokens':5,'total_tokens':10}})
         result,usage=self.invoke(handler,preview=previews.append)
         self.assertEqual(result,{'ok':True});self.assertEqual(usage['total_tokens'],10)
-        self.assertNotIn('PRIVATE',str(previews));self.assertTrue(seen[0]['stream'])
-        self.assertEqual(seen[0]['reasoning_effort'],'low')
-        self.assertEqual(seen[0]['temperature'],.7)
+        self.assertNotIn('PRIVATE',str(previews));self.assertFalse(seen[0]['stream'])
+        self.assertEqual(seen[0]['reasoning_effort'],'low');self.assertEqual(seen[0]['temperature'],.7)
+        self.assertEqual(seen[0]['max_tokens'],4096)
 
     def test_timeout_is_specific_and_not_retried(self):
         calls=[]
-        def handler(request):
-            calls.append(request);raise httpx.ReadTimeout('private endpoint detail')
-        with self.assertRaisesRegex(team.HostedWriterError,'timed out'):
-            self.invoke(handler)
+        def handler(request):calls.append(request);raise httpx.ReadTimeout('private endpoint detail')
+        with self.assertRaisesRegex(team.HostedWriterError,'within 60 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
-    def test_partial_stream_is_not_validated_as_complete(self):
-        def handler(request):return httpx.Response(200,text='data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n')
-        with self.assertRaisesRegex(team.HostedWriterError,'before completion'):self.invoke(handler)
+    def test_truncated_completion_cannot_be_saved_as_valid(self):
+        def handler(request):return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{}'},'finish_reason':'length'}]})
+        with self.assertRaisesRegex(ValueError,'reached its limit'):self.invoke(handler)
 
     def test_gemma_disables_thinking_and_status_failure_has_no_retry(self):
         seen=[]
-        def handler(request):seen.append(json.loads(request.content));return httpx.Response(429)
+        def handler(request):seen.append(json.loads(request.content));return httpx.Response(429,json={'error':{'message':'private provider message'}})
         with self.assertRaisesRegex(team.HostedWriterError,'HTTP 429'):self.invoke(handler,team.GEMMA)
-        self.assertEqual(len(seen),1)
-        self.assertEqual(seen[0]['chat_template_kwargs'],{'enable_thinking':False})
+        self.assertEqual(len(seen),1);self.assertEqual(seen[0]['chat_template_kwargs'],{'enable_thinking':False})
+        self.assertEqual([m['role'] for m in seen[0]['messages']],['user'])
+
+    def test_queued_request_is_not_parsed_as_corrupt_json(self):
+        def handler(request):return httpx.Response(202,json={'requestId':'test'})
+        with self.assertRaisesRegex(team.HostedWriterError,'queued or incomplete'):self.invoke(handler)
