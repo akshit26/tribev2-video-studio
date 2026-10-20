@@ -43,7 +43,10 @@ def configuration():
     from studio_script_local import local_configuration
     from studio_script_nvidia import nvidia_token, MODEL
     nvidia_ready = bool(nvidia_token())
-    return {"default_backend": "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
+    from studio_script_team import ready
+    team_ready=ready()
+    return {"default_backend": "team" if team_ready else "nvidia" if nvidia_ready else "local", "token_configured": bool(hf_token()),
+            "team_configured":team_ready,
             "nvidia_token_configured": nvidia_ready, "nvidia_model": MODEL,
             "models": [{"id": key, "name": name} for key, name in MODELS.items()],
             "local_models": local_configuration(),
@@ -52,6 +55,9 @@ def configuration():
 
 
 def validate_configuration(brief):
+    if brief.get('writer_backend')=='team':
+        from studio_script_team import validate_configuration as validate_team
+        return validate_team(brief)
     if brief.get("writer_backend") == "nvidia":
         from studio_script_nvidia import validate_configuration as validate_nvidia
         return validate_nvidia(brief)
@@ -108,10 +114,10 @@ def run_hf_writer(output, request, progress, provider=None):
     from studio_script_examples import catalog
     brief = request["brief"]
     validate_configuration(brief)
-    backend = "nvidia" if provider else "huggingface"
+    backend = brief.get('writer_backend','nvidia') if provider else "huggingface"
     model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
     signature = hashlib.sha256(json.dumps(["hosted-writer-v3", backend, model, getattr(provider, "PROFILE", None), SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
-    prefix = "nvidia" if provider else "hf"
+    prefix = backend if provider else "hf"
     path = output / (prefix + "_writer_checkpoint.json")
     try:
         checkpoint = json.loads(path.read_text(encoding="utf-8"))
@@ -134,7 +140,8 @@ def run_hf_writer(output, request, progress, provider=None):
             return cached["result"]
         if stats["calls_this_run"] >= MAX_CALLS:
             raise HostedWriterError("Hosted request limit reached for this run. Saved drafts are retained; retry or switch to Local.")
-        progress(1 + 98*fraction, f"{provider.NAME if provider else MODELS[model]}: {label}")
+        display=provider.stage_model(label) if provider and hasattr(provider,'stage_model') else provider.NAME if provider else MODELS[model]
+        progress(1 + 98*fraction, f"{display}: {label}")
         stats["calls_this_run"] += 1
         creative = label.startswith(("Hook options", "Draft")) and "repair" not in label
         temperature = .85 if creative and label.startswith("Hook options") else .7 if creative else 0
@@ -150,7 +157,10 @@ def run_hf_writer(output, request, progress, provider=None):
                 if paragraphs:
                     _write_json(output / "script_live.json", {"paragraphs": paragraphs, "validated": False, "reviewed": False})
                     last_preview = time.monotonic()
-            result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
+            if hasattr(provider,'complete_stage'):
+                result,usage=provider.complete_stage(token,model,SYSTEM,prompt,tokens,1 if creative else 0,preview,label)
+            else:
+                result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
             if label.startswith('Draft') and 'repair' not in label:
                 progress(1 + 98*fraction, "Making the speech sound natural")
                 try:

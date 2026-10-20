@@ -29,7 +29,7 @@ def install(server):
         with server._lock:
             if state["status"] in {"queued", "running"} and server._active_job != script_id:
                 state.update(status="failed", stage="Interrupted by server restart", error="Saved drafts are preserved. Start a new revision to continue.")
-        for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result")]:
+        for name, key in [("hooks.json", "hook_options"), ("script_result.json", "result"), ("tribe_rating.json", "tribe_recording_rating")]:
             try:
                 state[key] = json.loads((path / name).read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -75,7 +75,7 @@ def install(server):
     def process(script_id, request):
         path = directory(script_id)
         begun = time.monotonic()
-        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia"} else "Starting local writer", "progress": 1, "brief": request["brief"]}
+        state = {"id": script_id, "status": "running", "stage": "Starting hosted writer" if request["brief"].get("writer_backend") in {"huggingface", "nvidia", "team"} else "Starting local writer", "progress": 1, "brief": request["brief"]}
         try:
             persist(path, state)
             def progress(percent, stage):
@@ -87,6 +87,9 @@ def install(server):
             elif request["brief"].get("writer_backend") == "nvidia":
                 from studio_script_nvidia import run_nvidia_writer
                 run_nvidia_writer(path, request, progress)
+            elif request['brief'].get('writer_backend')=='team':
+                from studio_script_team import run_team_writer
+                run_team_writer(path,request,progress)
             else:
                 from studio_pipeline import _run_worker, stage_pause
                 stage_pause(progress, 1, "Waiting for the GPU to be ready")
@@ -138,6 +141,32 @@ def install(server):
     def examples():
         from studio_script_examples import catalog, NICHES
         return dict(catalog(), niches=NICHES)
+
+    @app.get('/api/scripts/learning')
+    def learned_logic():
+        try:
+            rows=json.loads((server.RESULTS_DIR/'_writer_learning'/'rules.json').read_text(encoding='utf-8'))
+        except (OSError,ValueError):rows=[]
+        return {'rules':rows[-30:],'method':'Observed video mechanisms + book references. Conditional hypotheses, not script templates or causal virality proof.'}
+
+    @app.post('/api/scripts/{script_id}/tribe-score')
+    def tribe_rating(script_id: str,values: Annotated[dict,Body()]):
+        state=read(script_id)
+        job_id=values.get('video_job_id')
+        if not isinstance(job_id,str) or not server.JOB_ID.fullmatch(job_id):raise HTTPException(422,'Choose the recorded video job to rate.')
+        job=server._load_job(job_id)
+        if job['status']!='completed':raise HTTPException(409,'Finish the recorded video analysis first.')
+        path=server._job_dir(job_id)
+        media=next((p for p in path.glob('input.*') if p.suffix.lower() in server.VIDEO_EXTENSIONS),None)
+        if not media:raise HTTPException(422,'Original recorded media is missing.')
+        language={'English':'en','Hindi':'hi','Hindi (Roman)':'hi','Hinglish':'hi'}.get(state['brief']['language'],state['brief']['language'])
+        try:
+            from studio_script_tribe import rate_recording
+            result=rate_recording(path,media,language)
+        except (OSError,ValueError,KeyError) as exc:raise HTTPException(422,server._safe_error(exc)) from None
+        from studio_pipeline import _write_json
+        _write_json(directory(script_id)/'tribe_rating.json',dict(result,video_job_id=job_id))
+        return result
 
     def performance_path():
         return server.RESULTS_DIR / "_scripts" / "performance_data.json"
@@ -241,6 +270,8 @@ def install(server):
             if brief.get('research_id'):
                 from studio_script_research import writing_context
                 brief['research_context']=writing_context(read_research(brief['research_id']),brief)
+            from studio_video_learning import recall
+            brief['learned_mechanisms']=recall(server.RESULTS_DIR,brief)
             mode = values.get("mode", "hooks")
             if mode not in {"hooks", "script"}:
                 raise ValueError("Choose hooks or script.")

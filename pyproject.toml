@@ -39,6 +39,7 @@ Repository = "https://github.com/facebookresearch/tribev2"
 
 [project.optional-dependencies]
   studio = [
+    "yt-dlp>=2026.8.19",
     "rapidocr-onnxruntime==1.4.4",
     "pypdf>=5,<7",
     "psutil>=7,<8",

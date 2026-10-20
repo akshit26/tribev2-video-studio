@@ -86,7 +86,7 @@ class ResearchAPITests(unittest.TestCase):
                 entered.set();release.wait(3)
                 return dict(ANSWER,sources=SOURCES,source_mode='news_search',warnings=[],method='Fixture research')
             with TestClient(server.app,base_url='http://127.0.0.1:8765') as client,patch.object(r,'research',side_effect=research):
-                first=client.post('/api/scripts/research',json={'topic':'Moisturiser','niche':'skincare','language':'English'})
+                first=client.post('/api/scripts/research',json={'topic':'Moisturiser','niche':'skincare','language':'English','research_mode':'topic_notes'})
                 self.assertEqual(first.status_code,202,first.text)
                 self.assertTrue(entered.wait(2))
                 sid=first.json()['id']

@@ -35,6 +35,16 @@ def values(raw):
         raise ValueError('Choose a supported research niche.')
     result['language']=normalize_language(result['language'])
     result['niche']=niche_for(result)
+    result['research_mode']=raw.get('research_mode','videos')
+    if result['research_mode'] not in {'videos','topic_notes'}:raise ValueError('Choose video learning or topic notes.')
+    from studio_video_learning import canonical_video
+    urls=raw.get('video_urls',[])
+    if not isinstance(urls,list) or len(urls)>6 or any(not isinstance(u,str) for u in urls):raise ValueError('Supply at most six direct video links.')
+    result['video_urls']=[canonical_video(u)[1] for u in urls if isinstance(u,str)]
+    uploads=raw.get('upload_ids',[])
+    if not isinstance(uploads,list) or len(uploads)>3 or any(not isinstance(i,str) or not re.fullmatch(r'[a-f0-9]{32}',i) for i in uploads):
+        raise ValueError('Choose at most three uploaded reference clips.')
+    result['upload_ids']=uploads
     return result
 
 
@@ -170,6 +180,11 @@ def writing_context(state,brief):
     if topic(state['brief']['topic'])!=topic(brief['topic']) or state['brief']['niche']!=niche_for(brief):
         raise ValueError('Selected research is for a different topic or niche. Research this brief or deselect the notes.')
     result=state['result']
+    if result.get('kind')=='video_patterns':
+        return {'kind':'video_patterns','status':'Observational mechanism hypotheses, never product proof',
+            'summary':result['summary'][:200],
+            'rules':[{'rule':r['rule'][:250],'limits':r['limits'][:180],'book_ids':r['book_ids']} for r in result['rules'][:3]],
+            'source_ids':[s['id'] for s in result['sources']],'no_templates':True}
     return {'status':'Unverified research hypotheses, never product proof',
         'summary':result['summary'][:250], 'angles':[r['idea'][:160] for r in result['angles'][:2]],
         'questions':result['questions'][:2], 'avoid':result['avoid'][:2], 'source_mode':result['source_mode'],

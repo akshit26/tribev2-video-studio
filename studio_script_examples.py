@@ -40,6 +40,4 @@ def selected_examples(brief):
 
 
 def example_guidance(brief):
-    return (' REFERENCE PATTERNS AND ORIGINAL PRACTICE SCRIPTS: '+json.dumps(selected_examples(brief),ensure_ascii=False)+
-        ' Learn conversational rhythm and specificity, not wording or product facts. These are original practice examples, NOT downloaded transcripts, testimonials or measured winners. '
-        'Do not reuse their openings, jokes, details or personal experiences. Start with this brief\'s own mundane friction. Use one comic observation at most; never turn every noun into a character. ')
+    return ' Apply the supplied learned mechanism rules conditionally. Generate a fresh premise and fresh words for this product. No script templates, copied transcript wording or reusable fill-in-the-blank hooks. Research mechanisms are hypotheses, not proof of causal virality or product efficacy. '

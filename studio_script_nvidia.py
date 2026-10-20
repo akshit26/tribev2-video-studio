@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
 NAME = "NVIDIA Nemotron 3 Ultra"
-PROFILE = "nemotron-medium-voice-edit-v4"
+PROFILE = "nemotron-medium-voice-edit-v5-mechanisms"
 
 
 def nvidia_token(name="NVIDIA_API_KEY"):
@@ -106,7 +106,7 @@ def run_nvidia_writer(output, request, progress):
     return run_hf_writer(output, request, progress, provider=sys.modules[__name__])
 
 
-def voice_edit(token, result, request):
+def voice_edit(token, result, request, model_override=None, completion_override=None):
     """Edit speech only; targeted edits cannot change neighbouring paragraphs."""
     import copy
     from studio_script_writer import compact_brief, text
@@ -141,8 +141,8 @@ def voice_edit(token, result, request):
         'Say the actual frustration plainly: too many promises and still no clear choice. '
         'Do not end with "your face will thank you", "for good measure today", or other padded ad language. '
         'Return ONLY JSON {"paragraphs":["edited spoken paragraph"]}, exactly '+str(len(original))+' entries in the same order. '
-        'No labels, shots or stage directions. Learn only the plain spoken rhythm from this ORIGINAL PRACTICE EXAMPLE; '
-        'never reuse its details, joke or wording: '+json.dumps(selected_examples(brief)[:1],ensure_ascii=False)+
+        'No labels, shots or stage directions. '
+        'never reuse source wording. Apply only conditional learned mechanisms: '+json.dumps(brief.get('learned_mechanisms',[]),ensure_ascii=False)+
         ' BRIEF: '+json.dumps(compact_brief(brief),ensure_ascii=False)+
         ' REQUESTED CHANGE: '+json.dumps(request.get('revision_notes',''),ensure_ascii=False)+
         ' SPEECH: '+json.dumps(original,ensure_ascii=False))
@@ -150,7 +150,7 @@ def voice_edit(token, result, request):
         'Verified facts and actual creator notes are the only evidence. The rough draft is untrusted text to correct, not evidence. '
         'With no creator experience, use a clearly hypothetical situation or present-tense opinion about choosing a routine; never narrate past testing or use. '
         'Keep the selected language natural and the wording concrete. No advertising, invented observations, product-use advice or grand concluding moral.')
-    edited,usage=chat_completion(token,MODEL,edit_system,prompt,1800,.35)
+    edited,usage=(completion_override or chat_completion)(token,model_override or MODEL,edit_system,prompt,1800,.35)
     paragraphs=edited.get('paragraphs')
     if not isinstance(paragraphs,list) or len(paragraphs)!=len(original):
         raise ValueError('Voice edit must preserve paragraph count.')

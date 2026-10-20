@@ -61,7 +61,7 @@ class MultilingualWriterTests(unittest.TestCase):
     def test_selection_matches_niche_and_language_not_just_english_translation(self):
         b=dict(brief(),niche='arcade',language='Hindi')
         self.assertTrue(all('arcade-' in r['id'] for r in selected_examples(b)))
-        self.assertIn('क',example_guidance(b))
+        self.assertIn('mechanism',example_guidance(b))
         self.assertNotIn('One more try',example_guidance(b))
         self.assertEqual(niche_for({'topic':'सनस्क्रीन','facts':''}),'skincare')
         self.assertEqual(niche_for({'topic':'Lip balm','facts':'','niche':'fashion'}),'fashion')

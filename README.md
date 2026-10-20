@@ -131,3 +131,10 @@ This project is licensed under CC-BY-NC-4.0. See [LICENSE](LICENSE) for details.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get involved.
+
+
+Script video learning now defaults to actual short-video research: YouTube Shorts candidates first, TikTok second, Instagram third. Supply direct links or upload up to three 5?180 second clips when public discovery is restricted. Whisper transcribes original speech locally; Muse receives those transcripts and book principles, derives timestamped conditional mechanisms, and saves rules for matching niches and languages. This is persistent retrieval memory, not weight fine-tuning or script-template training. View counts are observed snapshots within accessible candidates, not global viral rankings or causal evidence. Hindi and English speech are filtered by detected language; ASR remains unverified by a native reviewer.
+
+Select **GPT-OSS drafts + Gemma review** with server-side `GPT_OSS_API_KEY` and `GEMMA_API_KEY`. GPT-OSS 20B drafts; Gemma 4 31B reviews and edits spoken words. Muse uses `MUSE_API_KEY`. Hosted availability and account limits apply; local generation remains available. Keys stay in the ignored `.env`.
+
+Kumo is attempted on the final team draft only when real comparable post outcomes meet the existing data requirements. It never invents labels from public views. Editorial readiness is separate from genuine TRIBE inference: recorded-media rating requires authentic `tribe_prediction.npz` and matching `.json` exports in the original video job, plus a fitted `TRIBE_CALIBRATION_ARTIFACT`. POST `/api/scripts/{id}/tribe-score` with `video_job_id` to apply that calibration. TRIBE has no native 0?100 script virality scale; missing predictions or calibration produce an explicit unavailable state. See TRIBE_CALIBRATION_GUIDE.md.

@@ -19,7 +19,7 @@ function updateContentMode(){
   $('contentModeHint').textContent=hints[$('contentMode').value];
 }
 $('contentMode').addEventListener('change',updateContentMode);
-function updateEngine(){const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=$('writerBackend').value!=='local';$('nvidiaSettings').hidden=$('writerBackend').value!=='nvidia';$('nvidiaTokenStatus').textContent=engineConfig?.nvidia_token_configured?'NVIDIA key configured on server.':'Set NVIDIA_API_KEY in the server environment or .env.';const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
+function updateEngine(){$('teamSettings').hidden=$('writerBackend').value!=='team';const hosted=$('writerBackend').value==='huggingface';$('hostedSettings').hidden=!hosted;$('localSettings').hidden=$('writerBackend').value!=='local';$('nvidiaSettings').hidden=$('writerBackend').value!=='nvidia';$('nvidiaTokenStatus').textContent=engineConfig?.nvidia_token_configured?'NVIDIA key configured on server.':'Set NVIDIA_API_KEY in the server environment or .env.';const installed=(engineConfig?.local_models||[]).filter(m=>m.installed);$('localModelStatus').textContent=installed.length?'Installed: '+installed.map(m=>m.name).join(', ')+'. Runs on this PC without HF inference credits.':'Local model status unavailable.';$('hfTokenStatus').textContent=engineConfig?.token_configured?'HF token detected on server. Inference Providers permission is required.':'Set HF_TOKEN in the server environment or .env, or use hf auth login. No token is stored in this browser.';}
 $('writerBackend').addEventListener('change',updateEngine);
 function updatePersona(){const p=personaCatalog.find(p=>p.id===$('personaSelect').value);if($('personaHint'))$('personaHint').textContent=p?p.direction+' Best for: '+p.best_for:'';}
 $('personaSelect').addEventListener('change',updatePersona);
@@ -45,9 +45,9 @@ async function poll(){
     pollFailures=0;
     const elapsed=job.elapsed_seconds?` · ${Math.round(job.elapsed_seconds)}s elapsed`:'';
     status(job.stage+elapsed+(job.error?' · '+job.error:''),job.status==='failed');
-    if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
-    $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
-    $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
+    if(job.status==='failed'&&['huggingface','nvidia','team'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
+    $('retryJob').textContent=['huggingface','nvidia','team'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
+    $('retryJob').dataset.localRetry=['huggingface','nvidia','team'].includes(job.brief?.writer_backend)?'true':'false';
     $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&['needs_review','unavailable'].includes(job.hook_options?.review_status));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
       renderHooks(job.hook_options.hooks,job.hook_options);shownHooks=JSON.stringify(job.hook_options);
@@ -112,6 +112,8 @@ function editedScript(){const s=structuredClone(editorBase);for(const t of $('sc
 function renderResult(result){
   $('resultSection').hidden=false;$('score').hidden=false;
   $('revisionStatus').textContent=result.revision_notes?'Requested: '+result.revision_notes:'';const parent=current?.parent_script_id||result.parent_script_id;$('openOriginal').hidden=!parent;$('openOriginal').dataset.scriptId=parent||'';
+  $('pipelineStatus').textContent=result.pipeline?result.pipeline.draft_model+' drafts | '+result.pipeline.analysis_model+' reviews':'';
+  $('tribeStatus').textContent=result.tribe_v2?.reason||'Editorial assessment only. Authentic TRIBE exports and fitted calibration are required for recorded-media ratings.';
   renderScenes(result.best.script);
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
@@ -184,20 +186,25 @@ function renderResearch(state){
   if(!snapshot)return;
   if(result){
     $('researchResult').append(make('p',result.summary),make('p',result.method,'muted small'));
+    for(const rule of result.rules||[]){const card=make('article',undefined,'card');card.append(make('h3',rule.rule),make('p',rule.explanation),make('p','Limits: '+rule.limits),make('p','Books: '+rule.book_ids.join(', '),'muted small'));for(const e of rule.evidence||[])card.append(make('p',e.video_id+' | '+e.start+'?'+e.end+'s | '+e.observation,'muted small'));$('researchResult').append(card);}
     for(const [key,label,field] of [['findings','Source observations','observation'],['angles','Creative angles to test','idea']]){
       $('researchResult').append(make('h3',label));
-      for(const row of result[key])$('researchResult').append(make('p',row[field]+' ['+row.source_ids.join(', ')+']'));
+      for(const row of result[key]||[])$('researchResult').append(make('p',row[field]+' ['+row.source_ids.join(', ')+']'));
     }
-    for(const [key,label] of [['questions','Questions to explore'],['avoid','Claims and assumptions to avoid']]){$('researchResult').append(make('h3',label));for(const text of result[key])$('researchResult').append(make('p',text));}
+    for(const [key,label] of [['questions','Questions to explore'],['avoid','Claims and assumptions to avoid']]){$('researchResult').append(make('h3',label));for(const text of result[key]||[])$('researchResult').append(make('p',text));}
   }
   for(const warning of snapshot.warnings||[])$('researchResult').append(make('p',warning,'muted small'));
   $('researchResult').append(make('h3','Sources and evidence limits'));
-  for(const source of snapshot.sources||[]){const card=make('article',undefined,'card');const link=make('a',source.id+' ? '+source.title);link.href=source.url;link.target='_blank';link.rel='noopener';card.append(link,make('p',source.excerpt),make('p',(source.published_at?source.published_at+' ? ':'')+source.evidence,'muted small'));$('researchResult').append(card);}
+  for(const source of snapshot.sources||[]){const card=make('article',undefined,'card');const link=make(source.url?'a':'strong',source.id+' | '+source.title);if(source.url){link.href=source.url;link.target='_blank';link.rel='noopener';}card.append(link,make('p',source.excerpt),make('p',(source.published_at?source.published_at+' ? ':'')+source.evidence,'muted small'));$('researchResult').append(card);}
 }
 async function loadResearchHistory(){const rows=await api('/api/scripts/research');$('researchHistory').replaceChildren();for(const row of rows.slice(0,10)){const button=make('button',row.brief.topic+' ? '+row.status);button.type='button';button.onclick=()=>openResearch(row.id);$('researchHistory').append(button);}}
-async function openResearch(id,attach=false){if(researchActive!==id&&!attach)$('useResearch').checked=false;researchActive=id;localStorage.setItem('tribe-research-active',id);clearTimeout(researchTimer);try{const state=await api('/api/scripts/research/'+id);if(researchActive!==id)return;researchCurrent=state;renderResearch(state);const running=['queued','running'].includes(state.status);$('researchStart').disabled=running;if(running){researchTimer=setTimeout(()=>openResearch(id,attach),1200);}else{if(attach&&state.status==='completed'){$('useResearch').checked=true;attachResearch();}await loadResearchHistory();}}catch(e){$('researchStatus').textContent=e.message;$('researchStart').disabled=false;}}
-$('researchForm').onsubmit=async e=>{e.preventDefault();const b=getBrief();const topic=$('researchTopicInput').value.trim()||b.topic;try{if(!topic)throw new Error('Enter a topic in the brief or research box.');$('researchStart').disabled=true;$('useResearch').checked=false;$('researchStatus').textContent='Starting Muse topic research...';const state=await api('/api/scripts/research',{method:'POST',body:JSON.stringify({topic,niche:b.niche,language:b.language,platform:b.platform})});await openResearch(state.id,true);}catch(error){$('researchStatus').textContent=error.message;$('researchStart').disabled=false;}};
+async function openResearch(id,attach=false){if(researchActive!==id&&!attach)$('useResearch').checked=false;researchActive=id;localStorage.setItem('tribe-research-active',id);clearTimeout(researchTimer);try{const state=await api('/api/scripts/research/'+id);if(researchActive!==id)return;researchCurrent=state;renderResearch(state);const running=['queued','running'].includes(state.status);$('researchStart').disabled=running;if(running){researchTimer=setTimeout(()=>openResearch(id,attach),1200);}else{if(attach&&state.status==='completed'){$('useResearch').checked=true;attachResearch();}await loadResearchHistory();await loadLearning();}}catch(e){$('researchStatus').textContent=e.message;$('researchStart').disabled=false;}}
+$('researchForm').onsubmit=async e=>{e.preventDefault();const b=getBrief();const topic=$('researchTopicInput').value.trim()||b.topic;try{if(!topic)throw new Error('Enter a topic in the brief or research box.');$('researchStart').disabled=true;$('useResearch').checked=false;$('researchStatus').textContent='Starting Muse topic research...';const files=[...$('researchClips').files];if(files.length>3)throw new Error('Choose at most 3 clips.');const upload_ids=[];for(const file of files){if(file.size>50*1024**2)throw new Error('Keep each clip below 50 MB.');const form=new FormData();form.append('video',file);const response=await fetch('/api/scripts/research/uploads',{method:'POST',body:form});const uploaded=await response.json();if(!response.ok)throw new Error(uploaded.detail||'Upload failed.');upload_ids.push(uploaded.id);}const video_urls=$('researchVideoUrls').value.split(/\n/).map(v=>v.trim()).filter(Boolean);const state=await api('/api/scripts/research',{method:'POST',body:JSON.stringify({topic,niche:b.niche,language:b.language,platform:b.platform,research_mode:'videos',video_urls,upload_ids})});await openResearch(state.id,true);}catch(error){$('researchStatus').textContent=error.message;$('researchStart').disabled=false;}};
 async function initResearch(){try{const config=await api('/api/scripts/research/config');$('researchStatus').textContent=config.configured?'Muse configured on server. Ready to research a topic.':'Set MUSE_API_KEY on the server.';await loadResearchHistory();if(!researchActive){const saved=config.active_id||localStorage.getItem('tribe-research-active');if(saved)await openResearch(saved);}}catch(e){$('researchStatus').textContent=e.message;}}
 
 init();
 initResearch();
+async function loadLearning(){try{const data=await api("/api/scripts/learning");$("learnedLogic").replaceChildren(...data.rules.map(r=>make("p",r.language+" / "+r.niche+": "+r.rule.rule,"muted small")));}catch(e){$("learnedLogic").textContent=e.message;}}
+loadLearning();
+
+$('rateTribe').onclick=async()=>{const id=active;try{if(!id)throw new Error('Open a saved script first.');$('rateTribe').disabled=true;const data=await api('/api/scripts/'+id+'/tribe-score',{method:'POST',body:JSON.stringify({video_job_id:$('tribeVideoJob').value.trim()})});if(active===id)$('tribeRecordingStatus').textContent=JSON.stringify(data.dimensions)+' | '+data.reason;}catch(e){$('tribeRecordingStatus').textContent=e.message;}finally{$('rateTribe').disabled=false;}};

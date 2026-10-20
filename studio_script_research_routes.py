@@ -4,7 +4,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
-from fastapi import Body, HTTPException
+from fastapi import Body, HTTPException, UploadFile,File
 
 
 def install(server):
@@ -43,7 +43,12 @@ def install(server):
             _write_json(path/'state.json',state)
         try:
             progress(state['stage'])
-            result=research(brief,lambda data:_write_json(path/'sources.json',data),progress)
+            if brief.get('research_mode')=='videos':
+                from studio_video_learning import run_video_research,remember
+                result=run_video_research(brief,path,server,lambda data:_write_json(path/'sources.json',data),progress)
+                remember(server.RESULTS_DIR,research_id,brief,result)
+            else:
+                result=research(brief,lambda data:_write_json(path/'sources.json',data),progress)
             _write_json(path/'result.json',result)
             state.update(status='completed',stage='Topic research ready')
         except Exception as exc:
@@ -53,6 +58,8 @@ def install(server):
             finally:
                 with lock:
                     if active==research_id:active=None
+                with server._lock:
+                    if server._active_job==research_id:server._active_job=None
 
     @app.get('/api/scripts/research/config')
     def config():
@@ -60,7 +67,37 @@ def install(server):
         from studio_script_research import MODEL
         with lock:
             return {'model':MODEL,'configured':bool(nvidia_token('MUSE_API_KEY') or nvidia_token()),'active_id':active,
-                'method':'Public search snippets + source-linked Muse synthesis. Not model-weight training.'}
+                'method':'Actual video transcription -> Muse mechanisms with book references. Priority: YouTube Shorts, TikTok, Instagram. No template training.'}
+
+    @app.post('/api/scripts/research/uploads',status_code=201)
+    async def upload(video: Annotated[UploadFile,File()]):
+        from pathlib import Path
+        import math
+        import cv2
+        from studio_pipeline import _write_json
+        extension=Path(video.filename or '').suffix.lower()
+        if extension not in {'.mp4','.mov','.webm','.mkv','.avi'}:raise HTTPException(415,'Upload a video reference clip.')
+        uid=uuid.uuid4().hex;path=server.RESULTS_DIR/'_research_uploads'/uid;path.mkdir(parents=True)
+        target=path/('input'+extension);size=0
+        try:
+            with target.open('wb') as stream:
+                while chunk:=await video.read(1024*1024):
+                    size+=len(chunk)
+                    if size>50*1024**2:raise HTTPException(413,'Reference clips must be at most 50 MB.')
+                    stream.write(chunk)
+            capture=cv2.VideoCapture(str(target))
+            try:
+                fps=capture.get(cv2.CAP_PROP_FPS);frames=capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                duration=frames/fps if fps>0 else 0
+            finally:capture.release()
+            if not math.isfinite(duration) or not 5<=duration<=180:raise HTTPException(422,'Use a decodable 5–180 second reference clip.')
+            _write_json(path/'metadata.json',{'file':target.name,'title':Path(video.filename or 'Reference').stem[:180],
+                'duration':duration,'metrics_observed_at':None,'metrics_status':'Uploaded reference; public virality not verified.'})
+            return {'id':uid,'duration':duration,'title':Path(video.filename or 'Reference').stem[:180]}
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+        finally:await video.close()
 
     @app.get('/api/scripts/research')
     def listing():
@@ -82,15 +119,24 @@ def install(server):
         except (ValueError,TypeError,UnicodeError) as exc:raise HTTPException(422,str(exc)) from None
         if not (nvidia_token('MUSE_API_KEY') or nvidia_token()):
             raise HTTPException(422,'Set MUSE_API_KEY on the server to research topics.')
+        for uid in brief.get('upload_ids',[]):
+            if not (server.RESULTS_DIR/'_research_uploads'/uid/'metadata.json').is_file():raise HTTPException(422,'An uploaded reference clip is missing.')
         with lock:
             if active is not None:raise HTTPException(409,'A topic research job is already running.')
             research_id=uuid.uuid4().hex
-            path=directory(research_id);path.mkdir(parents=True)
-            _write_json(path/'state.json',{'id':research_id,'brief':brief,'status':'queued','stage':'Research queued'})
+            if brief.get('research_mode')=='videos':
+                with server._lock:
+                    if server._active_job is not None:raise HTTPException(409,'Video transcription needs the shared GPU slot. Wait for the active job.')
+                    server._active_job=research_id
             active=research_id
-            try:pool.submit(run,research_id,brief)
+            try:
+                path=directory(research_id);path.mkdir(parents=True)
+                _write_json(path/'state.json',{'id':research_id,'brief':brief,'status':'queued','stage':'Research queued'})
+                pool.submit(run,research_id,brief)
             except Exception:
                 active=None
+                with server._lock:
+                    if server._active_job==research_id:server._active_job=None
                 raise
         return read(research_id)
 

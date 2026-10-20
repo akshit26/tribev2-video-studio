@@ -32,6 +32,8 @@ def main():
     def handle(route):
         request=route.request
         path=urlsplit(request.url).path
+        if path=='/api/scripts/learning':
+            route.fulfill(json={'rules':[]});return
         if path=='/api/scripts/research/config':
             route.fulfill(json={'configured':True,'active_id':None});return
         if path=='/api/scripts/research':
@@ -94,11 +96,8 @@ def main():
         assert page.locator('#nvidiaSettings').is_visible()
         assert page.locator('#localSettings').is_hidden()
         assert 'configured on server' in page.locator('#nvidiaTokenStatus').inner_text()
-        page.locator('#creatorReferences .card').last.wait_for()
-        assert page.locator('#creatorReferences .card').count()==2
-        page.locator('#referenceNiche').select_option('arcade')
-        page.locator('#referenceLanguage').select_option('Hindi')
-        assert 'बस' in page.locator('#creatorReferences').inner_text()
+        assert page.locator('#practiceExamples').is_hidden()
+        assert page.locator('#researchClips').count()==1
         assert page.locator('[name=niche] option').count()==6
         assert page.locator('#performanceFile').count()==1
         page.locator('#performanceFile').set_input_files({'name':'outcomes.json','mimeType':'application/json','buffer':json.dumps({'account':'test-account','rows':[]}).encode()})
