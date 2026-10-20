@@ -1,0 +1,174 @@
+{
+  "date": "2026-10-21",
+  "timezone": "Asia/Calcutta",
+  "title": "Reliability, speed and script quality",
+  "summary": "The audit reproduced a Nemotron provider-side HTTP 500 in non-streaming completion, found a contradictory facewash/shampoo brief and traced unnecessary drafting latency to full reasoning on small tasks plus repeated context and grading of drafts already known to fail local checks. The fixes preserve reasoning, use resilient answer streaming and reduce redundant work. A live unpleasant-product run now completed in 73.0 seconds and passed the independent gate at 88/100; GPT-OSS reached the service but its separate sample was rejected for quality.",
+  "scope": "Writing engines, single-block editing, independent score/rewrite gate, topic research, creator reference library, brand facts, uploaded-video review, Whisper pacing evidence, cognitive simulation, PDF export, API error handling, browser interactions and mobile layout.",
+  "release_status": "Source fixes committed as 60b2170. All 344 unit tests and six browser workflows passed. The final-code server is healthy and idle at http://127.0.0.1:8765. Live Nemotron short acceptance passed; the GPT-OSS sample remained unapproved for quality.",
+  "findings": [
+    "Nemotron non-streaming calls for the failing brief returned HTTP 500; streaming the same brief returned usable JSON. GPT-OSS also generated drafts. Neither result supports the claim that both endpoints were universally unavailable.",
+    "The failed brief named Neem facewash but provided coconut-shampoo facts. A new product-conflict check rejects clear mismatches before generation, including older saved briefs.",
+    "GPT-OSS and Nemotron 3.5 drafting use compact creator instructions and medium reasoning for short/mid drafts and hooks. Reasoning stays enabled; long writing, scoring, cognitive simulation and the separate Ultra writer retain high effort.",
+    "Live Nemotron short runs passed at 88/100: English 73.0 s (37 words), Hindi 186.6 s (40 words). The separate GPT-OSS run took 76.7 s and stayed unapproved; API reachability and creative quality are distinct.",
+    "Human review caught a cleanup omission that a remote score had approved. A narrow manual-cleanup check and supported-language variants now protect this product instruction."
+  ],
+  "endpoint_checks": [
+    {
+      "check": "Nemotron / original failing brief",
+      "result": "Saved failure: HTTP 500 after 0.9 s. Exact non-stream prompt failed twice (~6 s including retry); brief mixed facewash and shampoo.",
+      "type": "Saved + live repro"
+    },
+    {
+      "check": "Nemotron / streaming transport",
+      "result": "Same diagnostic brief: JSON in 61.6 s (raw SSE) / 97.6 s (shared transport). Transport success; unsupported content was not approved.",
+      "type": "Live diagnostic"
+    },
+    {
+      "check": "Nemotron / balanced full pipeline",
+      "result": "73.0 s; 2 drafts, 1 remote grade; approved 88/100. 37-word unpleasant-product sample included in this report.",
+      "type": "Live acceptance"
+    },
+    {
+      "check": "GPT-OSS / balanced full pipeline",
+      "result": "76.7 s; 2 drafts; unapproved. Em-dash word counting and dump-clogs cleanup checks had false positives, now fixed; unsupported every-strand collection remains blocked. Endpoint answered.",
+      "type": "Live quality failure"
+    },
+    {
+      "check": "Nemotron / Hindi short pipeline",
+      "result": "186.6 s; 2 drafts and 2 remote grades; approved 88/100, 40 Devanagari words. Language/format/factual pass; human review found the voice plain and explanatory.",
+      "type": "Live language acceptance"
+    },
+    {
+      "check": "Higher-reasoning observations",
+      "result": "Nemotron: 365.2 s including retry, 94/100. GPT-OSS: 228.1 s, rejected by a later-refined cleanup rule. Not controlled comparisons.",
+      "type": "Live diagnostic"
+    },
+    {
+      "check": "Nemotron Ultra reachability",
+      "result": "HTTP 200; first SSE at 1.0 s. Connection/stream smoke check only, not completed creative output.",
+      "type": "Live smoke check"
+    }
+  ],
+  "latency_findings": [
+    "Final English acceptance: first draft 18.734 seconds; one rewrite 29.453 seconds; reviewed result 73.0 seconds total, 88/100. The first draft failed a local constraint and was not published as approved.",
+    "For GPT-OSS and Nemotron 3.5, medium reasoning on short/mid drafts and hooks reduces unnecessary deliberation. Long scripts, scoring, cognitive simulation and the separate Ultra writer keep high effort; reasoning stays enabled.",
+    "Compact, de-duplicated prompts preserve hooks, language, persona, facts, research and experiments. Locally invalid drafts skip remote grading; approval still requires independent scoring.",
+    "SSE answers and 15-second heartbeats expose progress while preserving reasoning privacy. One fresh-client retry keeps the chosen engine and shares its deadline.",
+    "Runs have differing retries, reasoning settings and rewrite counts under variable provider load. These observations do not establish a statistically valid speedup."
+  ],
+  "model_policy": "Writers: GPT-OSS 20B or selected Nemotron. GPT-OSS and Nemotron 3.5 share the resilient streaming transport and medium short/mid draft effort; long/scoring/simulation remain high. SCRIPT_DRAFT_REASONING_EFFORT=high restores full short-draft effort on those paths. The separate Ultra writer retains high effort and its existing stream client; Ultra cognitive simulation uses the shared client. Thinking stays enabled. Shared-client inference has a 600-second total deadline and one fresh retry; the complete pipeline may involve several calls.",
+  "coverage": [
+    {
+      "surface": "HTTP / provider",
+      "outcome": "API errors, SSE decoding, pending jobs, fresh-client retry, shared deadline, heartbeat and reasoning privacy. Live probes reached Nemotron, GPT-OSS and Ultra.",
+      "evidence": "Unit + live API"
+    },
+    {
+      "surface": "Writer / score gate",
+      "outcome": "Format, CTA/hook, verified facts, cleanup, one rewrite and approval gate; live English and Hindi short runs. GPT-OSS quality failure remained unapproved.",
+      "evidence": "Unit + live short run"
+    },
+    {
+      "surface": "Creator inputs",
+      "outcome": "Persona, language, selected hook, reference principles, research mechanisms, experiments and product-conflict validation.",
+      "evidence": "Unit + browser fixtures"
+    },
+    {
+      "surface": "Audio / review",
+      "outcome": "Corrected transcript reuse; retained WPM/audio evidence on simulator failure; source-video versus new-script provenance; schema and PDF evidence.",
+      "evidence": "Unit + browser + prior live clip"
+    },
+    {
+      "surface": "UI / server",
+      "outcome": "All six browser workflows passed: writer, multi-format, cognitive evidence, optional video review, brand and saved review. Mobile interactions and startup-failure cleanup covered.",
+      "evidence": "Six browser workflows + 344-test suite"
+    }
+  ],
+  "fixes": [
+    "Route GPT-OSS and Nemotron 3.5 through actual answer SSE, with one fresh-client retry for transient failures and a 15-second progress heartbeat. The separate Ultra writer keeps its existing streamed transport.",
+    "Keep reasoning enabled; balance short drafting effort, compact the creator prompt and avoid duplicate context or unnecessary remote scoring.",
+    "Reject clearly inconsistent product names/facts up front. Preserve selected hooks, personas, language, research and experiment guidance in the active prompt.",
+    "Validate manual removal before rinsing when describing this catcher cleanup; accept natural removal synonyms. Count punctuation-separated spoken words correctly and flag unsupported exhaustive collection promises.",
+    "Retain the selected writer on retry and correctly save/load cloud reference material.",
+    "Forward language, audience and verified product facts from related UI workflows; retain audio/transcript evidence when cognitive simulation fails and reuse corrected transcripts.",
+    "Release the busy slot if worker startup fails while retaining the uploaded media; preserve rejected drafts and require the gate before approved exports."
+  ],
+  "test_result": "344 unit tests passed in 10.669 seconds. All six browser workflows passed with zero JavaScript errors and no mobile overflow. pip check found no broken requirements; Studio/tool Python parsing, all web JavaScript syntax checks and git diff --check passed. A final server smoke check returned HTTP 200 with NVIDIA review configured and no active job.",
+  "sample": {
+    "product": "Reusable silicone shower-drain hair catcher",
+    "evidence_type": "Current live Nemotron acceptance, balanced reasoning; not a fixture",
+    "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "duration": "Short (15-30-second format); 37 spoken words",
+    "elapsed": "18.734 s first draft; 73.0 s reviewed total, including one rewrite and one independent remote grade",
+    "status": "APPROVED / 88 out of 100",
+    "facts": "A reusable silicone insert sits over a shower drain and catches loose hair. Lift it, remove the collected hair, rinse it and reuse it. No universal-fit, total-collection or blockage-prevention guarantee.",
+    "script": "Your shower drain is hosting a hair convention. You stand there shaking hands with wet strangers you never invited to move in. Lift the silicone insert, remove the collected hair, rinse it and reuse it. Buy one.",
+    "assessment": "The scorer returned has_cta=true, has_visual_demo=true, invented_experience=false and overall_score=88. Critique: The script opens with an under-12-word pattern interrupt and ends with a spoken CTA, meeting the duration and structure rules. No unsupported claims or invented experience appear. Optional: trim the wet-strangers metaphor so the product demo gets more pacing room; this is not a blocking failure.",
+    "editorial_review": "The script starts with an immediate visual metaphor, keeps a solo creator voice and includes the required removal-before-rinsing step and a single purchase action. The wet-strangers metaphor may feel too elaborate to some viewers; humour and shareability remain subjective. The audit does not demonstrate purchases or real retention."
+  },
+  "pipeline": [
+    "Uploaded MP4 is reviewed by a cloud vision-language endpoint. Visual observations and their timestamps are passed to the cognitive simulator as observations, not raw pixels.",
+    "Whisper transcription, word timings and WPM provide separate speech evidence. Speech-free gaps are not automatically acoustic silence.",
+    "The simulator returns an editorial attention score, emotion hypothesis, cognitive-load warning, critique and bounded failure timestamps. These are uncalibrated creative assessments.",
+    "A previous live test used a deliberately uninformative four-second blue/sine clip. The simulator assigned 10/100; its one rewrite was rejected at 58/100 for unsupported claims. The three-page PDF contained three timestamped screenshots. This validates failure handling, not real-ad quality."
+  ],
+  "integrity": [
+    "Secrets are loaded from ignored local environment files; reports and committed tools do not contain API keys.",
+    "A valid JSON response is not an approval. Independent scoring and deterministic factual/format checks decide approval.",
+    "Source-video scores must remain labelled as source-video evidence, never automatically transferred to a newly written script.",
+    "Saved user jobs and uploads are preserved; regression fixtures do not overwrite user work."
+  ],
+  "limitations": [
+    "NVIDIA queueing, rate limits and transient HTTP failures remain outside the local app. The 600-second per-request budget is not an end-to-end generation SLA.",
+    "GPT-OSS answered successfully but its balanced sample was unapproved. Two local word-count/cleanup false positives were fixed; the remaining universal every-strand promise is genuinely unsupported and now rejected locally. This was a validation/quality issue, not an endpoint crash.",
+    "All-browser and unit regression results use fixtures/mocks in many paths. The live short-script run provides narrower real-provider evidence; there is no claim every niche, language and format was live-tested.",
+    "The Hindi short sample passed language, format and grounding checks, but human review found it grammatical and plain. One English and one Hindi acceptance do not certify all languages, niches or formats; longer content, real-customer videos and commercial outcomes still need representative review."
+  ],
+  "evidence": [
+    {
+      "path": "cache/full-app-audit-tests.log",
+      "purpose": "Local final regression log: 344 tests in 10.669 seconds, OK. Raw local logs are not bundled in the public report."
+    },
+    {
+      "path": "results/app_audit/benchmark-fast-balanced/benchmark.json",
+      "purpose": "Live 73.0-second Nemotron sample, 88/100 independent approval, 2 attempts. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "results/app_audit/benchmark-team-balanced/benchmark.json",
+      "purpose": "Live 76.7-second GPT-OSS run; unapproved output and blockers. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "results/app_audit/benchmark-hindi/benchmark.json",
+      "purpose": "Live Hindi short run: 186.6 s, 40 words, 2 drafts/grades, 88/100. Human voice review: grammatical but plain. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "results/app_audit/benchmark-fast-final/benchmark.json",
+      "purpose": "Higher-effort Nemotron observation, 365.2 seconds including retry; not a controlled comparison. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "cache/endpoint-fixed-nemotron.json",
+      "purpose": "Shared-SSE transport diagnostic; mixed brief and unapproved content. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "cache/ultimate-validation/audit.pdf",
+      "purpose": "Prior synthetic clip: low score, rejected rewrite, 3 screenshots. Local audit artifact; raw file is not bundled."
+    },
+    {
+      "path": "docs/reports/creator-studio-audit-2026-10-21.json + tools/build_app_audit.py",
+      "purpose": "Published sanitized manifest and reproducible PDF generator. Raw benchmark logs and user artifacts remain local."
+    },
+    {
+      "path": "NVIDIA NIM: Get Started with Nemotron 3.5 Super VL / Control Reasoning",
+      "purpose": "Primary source: medium chooses shorter efficient reasoning; high keeps full reasoning. See linked source below."
+    }
+  ],
+  "commands": [
+    ".venv\\Scripts\\python.exe -m unittest discover -s tests",
+    "Browser acceptance scripts: tests/check_writer_browser.py, check_multiformat_browser.py, check_cognitive_browser.py, check_gemma_browser.py, check_brand_browser.py, check_studio_browser.py",
+    ".venv\\Scripts\\python.exe -m pip check; Python AST parsing; node --check web/*.js (each file); git diff --check",
+    "Report findings also reflect live provider requests recorded in the benchmark JSON artifacts; fixture passes are labelled separately."
+  ],
+  "revision": "Runtime source revision: 60b2170 (main). This report and its sanitized manifest are delivered in a following documentation-only commit. The restarted server is running this runtime revision.",
+  "nvidia_reasoning_source": "https://docs.nvidia.com/nim/large-language-models/latest/get-started/advanced/get-started-nemotron-3.5-super-vl.html#control-reasoning",
+  "build_command": ".venv\\Scripts\\python.exe tools\\build_app_audit.py docs\\reports\\creator-studio-audit-2026-10-21.json --output docs\\reports\\creator-studio-audit-2026-10-21.pdf"
+}

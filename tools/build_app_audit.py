@@ -1,7 +1,8 @@
 """Build an evidence-labelled app audit PDF from a local JSON manifest.
 
 Usage: python tools/build_app_audit.py results/app_audit/audit.json --output results/app_audit/app-audit.pdf
-The manifest, generated scripts, logs and PDF stay in ignored results/. No API calls.
+Private artifacts can stay in ignored results/. Sanitized manifests and reports
+may be published under docs/reports/. No API calls.
 """
 from __future__ import annotations
 
@@ -69,8 +70,8 @@ def build(manifest: dict, output: Path) -> None:
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 8),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ("LINEBELOW", (0, 0), (-1, 0), .6, teal),
             ("LINEBELOW", (0, 1), (-1, -1), .3, colors.HexColor("#DCE4EC")),
         ]))
@@ -103,12 +104,7 @@ def build(manifest: dict, output: Path) -> None:
                         for r in manifest.get("endpoint_checks", [])], [133, 264, 110]))
     story.extend([Spacer(1, 13), p("Why drafting felt slow", "Heading2"), bullets(manifest.get("latency_findings", [])),
                   p("Current model and deadline policy", "Heading2"), p(manifest.get("model_policy", "")),
-                  p("Timing interpretation", "Heading2"), p("Wall time includes queueing and model reasoning. A complete generation can include one initial draft, independent scoring and at most one rewrite with rescoring. First-answer time and full-pipeline time are reported separately wherever measured. No throughput or speedup claim is inferred from unlike prompts.", "SmallAudit")])
-    source = manifest.get("nvidia_reasoning_source", "")
-    if source.startswith("https://docs.nvidia.com/"):
-        story.append(Paragraph('Primary source: <a href="' + escape(source, {'"': '&quot;'})
-            + '">NVIDIA NIM model guide - Control Reasoning</a>. Medium effort retains reasoning with a shorter mode; high selects full reasoning.', styles["SmallAudit"]))
-
+                  p("Times include queueing and reasoning. Full-pipeline timings can include one rewrite and rescoring; unlike prompts do not establish a measured speedup.", "SmallAudit")])
     section("Application audit and fixes", "02 / Code and regression coverage")
     story.append(table(["Surface", "Coverage and outcome", "Evidence"],
                        [[r["surface"], r["outcome"], r.get("evidence", "")]
@@ -137,8 +133,12 @@ def build(manifest: dict, output: Path) -> None:
                        [[r["path"], r["purpose"]] for r in manifest.get("evidence", [])], [240, 267]))
     story.extend([Spacer(1, 14), p("Commands used", "Heading2"), bullets(manifest.get("commands", [])),
                   p("Build this report", "Heading2"),
-                  p(".venv\\Scripts\\python.exe tools\\build_app_audit.py results\\app_audit\\audit.json --output results\\app_audit\\app-audit.pdf", "SmallAudit"),
+                  p(manifest.get("build_command", ".venv\\Scripts\\python.exe tools\\build_app_audit.py results\\app_audit\\audit.json --output results\\app_audit\\app-audit.pdf"), "SmallAudit"),
                   p("Repository revision", "Heading2"), p(manifest.get("revision", "Working tree under audit; see release commit in final delivery."), "SmallAudit")])
+    source = manifest.get("nvidia_reasoning_source", "")
+    if source.startswith("https://docs.nvidia.com/"):
+        story.append(Paragraph('Primary source: <a href="' + escape(source, {'"': '&quot;'})
+            + '">NVIDIA NIM model guide - Control Reasoning</a>. Medium effort retains reasoning with a shorter mode; high selects full reasoning.', styles["SmallAudit"]))
 
     doc = SimpleDocTemplate(str(output), pagesize=(595.28, 841.89), rightMargin=44, leftMargin=44,
                             topMargin=48, bottomMargin=46, title=manifest.get("title", "Creator Video Studio audit"),
