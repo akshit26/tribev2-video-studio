@@ -12,7 +12,7 @@ Open **Script Writer**. Supply a product/topic, verified facts, audience, niche,
 - Mid: 140?170 words with pacing cues every three sentences.
 - Long: 1,500?1,800 words with 3?5 sections and one action near the end.
 
-GPT-OSS is the default writer when its credentials are configured. NVIDIA independently scores the draft. Reasoning stays enabled, with up to 180 seconds per generation request and one fresh-client retry for transient connection failures inside that deadline. Failed jobs retain completed drafts. The scoring gate allows one rewrite; rejected output is not presented as approved.
+GPT-OSS is the default writer when its credentials are configured. NVIDIA independently scores the draft. Reasoning stays enabled, with up to 600 seconds per generation request and one fresh-client retry for transient connection failures inside that deadline. Failed jobs retain completed drafts. The scoring gate allows one rewrite; rejected output is not presented as approved.
 
 Scripts appear in one expanding text area. Copy, edit, save or export the text. **Suggest changes** creates a new revision using your edited draft and instructions, preserving the original. Manual edits invalidate the displayed approval until reviewed again.
 

@@ -23,7 +23,7 @@ def write_json(path, data):
 def review_video(video, output, progress):
     from studio_gemma_video import analyze_virality, dashboard_state, NEMOTRON
     start = time.time()
-    progress(10, 'NVIDIA is reviewing the uploaded video (up to 180 seconds)')
+    progress(10, 'NVIDIA is reviewing the uploaded video (up to 600 seconds)')
     result = asyncio.run(analyze_virality(video, NEMOTRON, include_evidence=True))
     visual_frames = result.pop('visual_frames', [])
     dashboard = dashboard_state(result)

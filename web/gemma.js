@@ -18,7 +18,7 @@
     const output=make('div','');output.id='gemmaScores';status.style.overflowWrap='anywhere';panel.append(select,button,status,output);
     function render(state){
       const running=['queued','running'].includes(state.status);button.disabled=running||state.configured===false;select.disabled=running;
-      status.textContent=running?(state.model||select.value)+' '+state.status+(state.elapsed_seconds?' | '+Math.round(state.elapsed_seconds)+'s elapsed':'')+' | request timeout: 180 seconds':state.status==='failed'?'Unavailable: '+state.error:state.status==='completed'?'Assessment complete':state.configured===false?'Set GEMMA_API_KEY on the server.':'Ready for a separate API video assessment.';
+      status.textContent=running?(state.model||select.value)+' '+state.status+(state.elapsed_seconds?' | '+Math.round(state.elapsed_seconds)+'s elapsed':'')+' | request timeout: 600 seconds':state.status==='failed'?'Unavailable: '+state.error:state.status==='completed'?'Assessment complete':state.configured===false?'Set GEMMA_API_KEY on the server.':'Ready for a separate API video assessment.';
       output.replaceChildren();
       if(state.status==='completed'){
         const r=state.result;output.append(make('p','Scored by: '+(models[state.model]||state.model||'Unknown model (older saved result)')),make('strong',state.dashboard.status+' — creative readiness'),make('p','Hook: '+r.hook_score+'/100 | Pacing: '+r.pacing_score+'/100 | Overall estimate: '+r.overall_probability+'/100'),make('p',r.timestamped_revision_advice),make('p',state.dashboard.policy));

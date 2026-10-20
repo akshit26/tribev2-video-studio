@@ -12,7 +12,7 @@ python -m venv .venv
 
 Open http://127.0.0.1:8765/writer. Copy `.env.example` to `.env` and configure your NVIDIA credentials locally.
 
-GPT-OSS drafts with reasoning enabled; NVIDIA independently scores each draft and may request one rewrite. Short, mid and long scripts appear in one editable text area. API calls have a shared 180-second generation deadline. Video uploads use NVIDIA visual review; editorial scores are not calibrated virality probabilities.
+GPT-OSS drafts with reasoning enabled; NVIDIA independently scores each draft and may request one rewrite. Short, mid and long scripts appear in one editable text area. API calls have a shared 600-second generation deadline. Video uploads use NVIDIA visual review; editorial scores are not calibrated virality probabilities.
 
 The creator reference desk combines book principles, official platform guidance and identified editorial heuristics. Emotion, recognition, shareable observations and resolved story promises guide subtle product integration. References inform prompts; they do not fine-tune model weights. Supply verified product facts and authentic creator experience in the brief.
 
