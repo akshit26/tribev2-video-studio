@@ -117,9 +117,9 @@
     function drawTimeline(duration,visual,audio){const svg=byId('timeline');svg.replaceChildren();const total=Math.max(1,number(duration));const x=time=>25+Math.min(total,Math.max(0,number(time)))/total*850;svg.append(svgNode('line',{x1:25,y1:30,x2:875,y2:30,stroke:'#3e4b3b','stroke-width':1}),svgNode('line',{x1:25,y1:57,x2:875,y2:57,stroke:'#3e4b3b','stroke-width':1}));for(let i=0;i<=4;i++){const point=total*i/4;svg.append(svgNode('line',{x1:x(point),y1:17,x2:x(point),y2:65,stroke:'#354033','stroke-width':1,'stroke-dasharray':'2 4'}),svgNode('text',{x:x(point),y:88,fill:'#9fab98','font-size':11,'font-family':'monospace','text-anchor':i===0?'start':i===4?'end':'middle'},stamp(point)));}for(const time of visual){const mark=svgNode('rect',{x:x(time)-2,y:21,width:4,height:18,rx:2,fill:'#c3eb94'});mark.append(svgNode('title',{},`Visual change at ${stamp(time)}`));svg.append(mark);}for(const time of audio){const mark=svgNode('circle',{cx:x(time),cy:57,r:3,fill:'#e8b381'});mark.append(svgNode('title',{},`Near-peak audio at ${stamp(time)}`));svg.append(mark);}}
     function renderReport(report,id){
       window.renderCreative(report,id);
-      byId('pdfDownload').hidden=report.backend==='nvidia';
+      byId('pdfDownload').hidden=report.backend==='nvidia'&&!report.audit?.pdf_file;
       byId('reportSubtitle').textContent=`${report.video?.name||'Uploaded video'} | ${report.backend==='nvidia'?'NVIDIA API assessment':number(report.video?.duration_seconds).toFixed(1)+' seconds'}`;
-      byId('pdfDownload').href=assetUrl(id,'report.pdf');
+      byId('pdfDownload').href=assetUrl(id,report.audit?.pdf_file==='audit.pdf'?'audit.pdf':'report.pdf');
       byId('reportWarnings').replaceChildren();
       for(const warning of list(report.processing?.warnings))byId('reportWarnings').append(el('div','notice',warning));
       byId('report').hidden=false;

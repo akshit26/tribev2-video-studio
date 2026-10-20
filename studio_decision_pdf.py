@@ -5,6 +5,66 @@ from studio_viewer_response import viewer_response_map
 from pathlib import Path
 
 
+def generate_audit_pdf(old_script, new_script, critique, image_paths, output_path=None):
+    """Exactly three bounded pages; long text is explicitly excerpted, never spilled."""
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, PageBreak, KeepInFrame, Spacer
+    font = 'Helvetica'
+    for candidate in (Path('C:/Windows/Fonts/Nirmala.ttf'), Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')):
+        if candidate.is_file():
+            if 'AuditUnicode' not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont('AuditUnicode', str(candidate)))
+            font = 'AuditUnicode'
+            break
+    body = ParagraphStyle('audit-body', fontName=font, fontSize=10, leading=15, textColor=colors.HexColor('#21312d'), splitLongWords=True)
+    heading = ParagraphStyle('audit-heading', parent=body, fontSize=18, leading=23, spaceAfter=14)
+    subheading = ParagraphStyle('audit-subheading', parent=body, fontSize=12, leading=17, spaceAfter=8)
+    def paragraph(value, style=body, cap=6000):
+        value = str(value or '')
+        if len(value) > cap:
+            value = value[:cap].rsplit(' ', 1)[0] + ' [Excerpt; full text retained in the saved JSON.]'
+        return Paragraph(html.escape(value).replace('\n', '<br/>'), style)
+    stream = BytesIO()
+    doc = SimpleDocTemplate(stream, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=42)
+    pages = [[paragraph('Virality Critique', heading), paragraph('Editorial simulation, not measured audience response.', cap=200), Spacer(1, 12), paragraph(critique, cap=4500)]]
+    visuals = [paragraph('Visual Evidence', heading)]
+    for item in list(image_paths)[:3]:
+        path = Path(item['path'] if isinstance(item, dict) else item)
+        if not path.is_file():
+            continue
+        image = Image(str(path))
+        ratio = min(210 / image.imageWidth, 165 / image.imageHeight)
+        image.drawWidth, image.drawHeight = image.imageWidth * ratio, image.imageHeight * ratio
+        visuals.extend([image, paragraph(item.get('caption', path.name) if isinstance(item, dict) else path.name, cap=500), Spacer(1, 9)])
+    if len(visuals) == 1:
+        visuals.append(paragraph('No supported visual failure timestamp was identified; no screenshot was fabricated.'))
+    pages.append(visuals)
+    pages.append([paragraph('Script Revisions', heading), paragraph('Original spoken transcript', subheading),
+                  paragraph(old_script or 'No usable speech transcript was available.', cap=4500), Spacer(1, 14),
+                  paragraph('One rewrite attempt — review before publishing', subheading),
+                  paragraph(new_script or 'Rewrite unavailable. See the critique and saved diagnostics.', cap=4500)])
+    story = []
+    for index, page in enumerate(pages):
+        if index:
+            story.append(PageBreak())
+        story.append(KeepInFrame(doc.width, doc.height - 4, page, mode='shrink'))
+    def footer(canvas, document):
+        if canvas.getPageNumber() > 3:
+            raise ValueError('Audit exceeded the hard three-page limit.')
+        canvas.setFont(font, 8)
+        canvas.drawString(36, 23, 'Creator Studio | Audit | Page ' + str(canvas.getPageNumber()) + ' / 3')
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    data = stream.getvalue()
+    if output_path is not None:
+        Path(output_path).write_bytes(data)
+    return data
+
+
 def concise(value, limit=350):
     value=' '.join(str(value or '').split())
     if len(value)<=limit:return value

@@ -7,9 +7,9 @@ from studio_script_hf import HostedWriterError
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
 NAME='GPT-OSS single-block writer'
-PROFILE='gptoss-gemma-v7-reasoning-600s'
+PROFILE='gptoss-gemma-v8-reasoning-180s'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
-REQUEST_TIMEOUT_SECONDS=600
+REQUEST_TIMEOUT_SECONDS=180
 
 
 def nvidia_token():return credential('GPT_OSS_API_KEY')
@@ -46,7 +46,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
     async def receive():
         async with AsyncOpenAI(base_url=ENDPOINT.rsplit('/',2)[0],api_key=token,
                 timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS,connect=REQUEST_TIMEOUT_SECONDS,write=REQUEST_TIMEOUT_SECONDS,pool=REQUEST_TIMEOUT_SECONDS),max_retries=0) as client:
-            raw=await client.chat.completions.with_raw_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'300'})
+            raw=await client.chat.completions.with_raw_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'180'})
             if raw.status_code==202:
                 from studio_gemma_video import request_id,poll_result,ViralityAPIError
                 try:
@@ -89,13 +89,13 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
                 if attempt:
                     raise
                 # Transient TLS/socket disconnects can recover with a fresh client.
-                # Never retry HTTP errors or extend the total 600-second deadline.
+                # Never retry HTTP errors or extend the total 180-second deadline.
                 await asyncio.sleep(1)
 
     async def bounded():return await asyncio.wait_for(resilient_receive(),timeout=REQUEST_TIMEOUT_SECONDS)
     try:return asyncio.run(bounded())
     except (TimeoutError,APITimeoutError):
-        raise HostedWriterError(f'{model}: NVIDIA did not return output within 600 seconds. Saved drafts are retained; retry later or select another engine.') from None
+        raise HostedWriterError(f'{model}: NVIDIA did not return output within 180 seconds. Saved drafts are retained; retry later or select another engine.') from None
     except APIStatusError as exc:
         hint={401:'API key rejected',403:'model access denied',404:'model unavailable',429:'rate limit or quota reached'}.get(exc.status_code,'provider request failed')
         raise HostedWriterError(f'{model}: {hint} (HTTP {exc.status_code}). Saved drafts are retained.') from None

@@ -11,6 +11,15 @@ import prepare_riva
 
 
 class CreatorLibraryTests(unittest.TestCase):
+    def test_named_brief_variables_and_persona_reach_generation(self):
+        brief = writer.brief_values(dict(product_name='Notebook', target_audience='Forgetful students',
+                                        facts='80 blank pages', pain_point='Forgotten ideas',
+                                        book_principle='One concrete memorable idea', content_duration='short'))
+        self.assertEqual(brief['topic'], 'Notebook')
+        self.assertEqual(brief['audience'], 'Forgetful students')
+        self.assertEqual(brief['pain_point'], 'Forgotten ideas')
+        self.assertEqual(brief['book_principle'], 'One concrete memorable idea')
+
     def test_creator_principles_reach_prompt_and_saved_reference_metadata(self):
         brief = writer.brief_values(dict(topic='Notebook', facts='80 blank pages',
                                         content_duration='short', content_mode='ugc'))

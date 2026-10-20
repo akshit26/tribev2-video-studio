@@ -116,6 +116,16 @@ def install(server):
                 ok, _, reason = _run_worker("review", path / "unused.mp4", path, "cuda", server.get_system_info()["default_budget_mb"], progress, 1, 99)
                 if not ok:
                     raise RuntimeError(reason)
+            source_id=request['brief'].get('source_job_id')
+            result_path=path/'script_result.json'
+            if source_id and result_path.exists():
+                source=json.loads((server._job_dir(source_id)/'report.json').read_text(encoding='utf-8'))
+                saved=json.loads(result_path.read_text(encoding='utf-8'))
+                if source.get('cognitive'):
+                    saved.update(source_video_cognitive=source['cognitive'],source_video_pacing=source.get('pacing',{}),
+                                 source_video_job_id=source_id,audit=source.get('audit',{}))
+                    from studio_pipeline import _write_json
+                    _write_json(result_path,saved)
             state.update(status="completed", progress=100, stage="Script ready" if (path / "script_result.json").exists() else "Hook options ready")
             if (path / 'script_result.json').exists():
                 saved=json.loads((path / 'script_result.json').read_text(encoding='utf-8'))
@@ -304,7 +314,7 @@ def install(server):
                 if brief["brand_id"] and job.get("brand_id") and job["brand_id"] != brief["brand_id"]:
                     raise ValueError("The source video belongs to a different brand.")
                 source = json.loads((server._job_dir(brief["source_job_id"]) / "report.json").read_text(encoding="utf-8"))
-                brief["source_review"] = json.dumps(source.get("brief", {}), ensure_ascii=False)[:1200]
+                brief["source_review"] = json.dumps({"review":source.get("brief", {}),"cognitive":source.get("cognitive",{})}, ensure_ascii=False)[:1200]
             if values.get("use_experiments"):
                 brief["experiment_notes"] = [{"hypothesis": r["hypothesis"][:250], "observations": r["observations"][:500],
                                                "evidence_type": r["evidence_type"]} for r in experiments()[-2:]]

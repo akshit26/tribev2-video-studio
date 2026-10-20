@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v26-creator-library"
-SYSTEM = "Act as an expert influencer and creator-led video copywriter. Build an audience-worthy idea before integrating a product: a recognizable frustration, surprising observation, playful reversal, useful discovery or satisfying story. Give the viewer a reason to keep watching and a specific reason to share with a friend. Choose an emotion and resolve the opening promise. Speak naturally in the requested language, including idiomatic Hindi or Hinglish when requested. Work from the supplied creator context; never fabricate lived experience. Integrate the brand through its relevant role in the idea, without reciting a feature list or sounding like a brand announcer. Let humor and opinions be specific to the niche. Preserve the required duration and CTA, making the single action conversational and grounded in the brief. Return exclusively a JSON object with one final_script string containing the complete continuous script. Follow the supplied duration rules. Do NOT invent a first-person product routine or personal creator experience. Do NOT make unsupported medical claims, guarantees, or touch-free promises. Strip out filler phrases like in this video or let's dive in."
+WRITER_VERSION = "writer-v27-cognitive-audit"
+SYSTEM = "Act as an expert influencer and creator-led video copywriter. Build an audience-worthy idea before integrating a product: a recognizable frustration, surprising observation, playful reversal, useful discovery or satisfying story. Give the viewer a reason to keep watching and a specific reason to share with a friend. Choose an emotion and resolve the opening promise. Speak naturally in the requested language, including idiomatic Hindi or Hinglish when requested. Work from the supplied creator context; never fabricate lived experience. Integrate the brand through its relevant role in the idea, without reciting a feature list or sounding like a brand announcer. Let humor and opinions be specific to the niche. Preserve the required duration and CTA, making the single action conversational and grounded in the brief. Return exclusively a JSON object with one final_script string containing the complete continuous script. Follow the supplied duration rules. Do NOT invent a first-person product routine or personal creator experience. Do NOT make unsupported medical claims, guarantees, or touch-free promises without supplied evidence. Acknowledge real cleaning steps when relevant. Strip out filler phrases like in this video or let's dive in."
 FORMATS = {
     'short': (35,60,30,"Write a 35-60 word script. Start immediately with a visual pattern interrupt hook under 12 words. Do NOT ask a question. Cut all context and deliver exactly one single narrative beat or product demo. Place a direct purchase CTA at the end."),
     'mid': (140,170,60,"Write a 140-170 word script. Structure: 5s Hook, 45s Body, 10s CTA. Insert a bracketed visual cue (e.g., [B-ROLL: fast zoom]) every 3 sentences for pacing. Ensure every sentence introduces new information."),
@@ -297,7 +297,7 @@ def hook_usage_issues(hooks, brief, opening_limit=True):
 def brief_values(values):
     if not isinstance(values, dict):
         raise ValueError("Supply a script brief.")
-    result = {"topic": text(values.get("topic"), 300), "facts": text(values.get("facts"), 2000)}
+    result = {"topic": text(values.get("topic") or values.get("product_name"), 300), "facts": text(values.get("facts"), 2000)}
     for key, default, limit in [("audience", "General audience", 300), ("platform", "Instagram Reels", 80),
                                 ("language", "English", 80), ("tone", "Conversational", 100),
                                 ("objective", "Create something viewers would watch and share", 300), ("cta", "", 300),
@@ -306,7 +306,9 @@ def brief_values(values):
                                 ("production_style", "solo_simple", 40), ("persona", "auto", 50), ("niche", "auto", 30),
                                 ("writer_backend", "local", 30), ("local_model", "auto", 30), ("hf_model", "deepseek-ai/DeepSeek-V4.1-Flash", 140),
                                 ("creator_experience", "", 1000), ("research_id", "", 32)]:
-        result[key] = text(values.get(key) or default, limit) if (values.get(key) or default) else ""
+        result[key] = text(values.get(key) or (values.get("target_audience") if key=="audience" else None) or default, limit) if (values.get(key) or default) else ""
+    for key,limit in (("product_name",300),("target_audience",300),("pain_point",600),("book_principle",1000)):
+        result[key]=text(values[key],limit) if values.get(key) else ""
     from studio_script_examples import NICHES
     from studio_script_language import normalize_language
     result["language"] = normalize_language(result["language"])
@@ -993,7 +995,7 @@ def write_final_script(request,complete,save,progress,save_draft=None):
         return _legacy_final_script(request,complete,save,progress,save_draft)
     from studio_pipeline import score_draft_script
     kind=brief['content_duration'];minimum,maximum,_,rules=FORMATS[kind]
-    context={k:brief.get(k,'') for k in ('topic','facts','audience','language','persona','creator_experience','creative_notes','objective','cta','content_duration','content_mode','content_format','platform')}
+    context={k:brief.get(k,'') for k in ('topic','facts','audience','language','persona','creator_experience','creative_notes','objective','cta','content_duration','content_mode','content_format','platform','product_name','target_audience','pain_point','book_principle','source_review','brand_context')}
     context.update(persona_direction=persona_guidance(brief),creator_references=reference_cards(brief),learned_mechanisms=brief.get('learned_mechanisms',[]))
     prompt=system_prompt(brief)+' BRIEF: '+json.dumps(context,ensure_ascii=False)
     if request.get('previous_script'):

@@ -31,7 +31,7 @@ RESULTS_DIR = ROOT / "results" / "studio"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 VIDEO_EXTENSIONS = {".mp4"}
 PUBLIC_FILES = {
-    "report.pdf", "report.json", "transcript.txt", "transcript.json",
+    "report.pdf", "report.json", "audit.pdf", "cognitive_audit.json", "transcript.txt", "transcript.json",
     "subtitles.srt", "video_metrics.csv", "video_info.json", "charts.png", "evaluation.json", "ocr.json",
 }
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")

@@ -103,12 +103,16 @@ function renderScript(script){
   updateScriptTiming(editorBase);resizeScript();
 }
 function editedScript(){return {final_script:$('finalScript').value};}
-$('finalScript').addEventListener('input',()=>{dirty=true;$('editStatus').textContent='Unsaved changes.';$('score').hidden=true;updateScriptTiming(editedScript());resizeScript();});
+$('finalScript').addEventListener('input',()=>{dirty=true;$('cognitiveMetrics').hidden=true;$('auditDownload').hidden=true;$('editStatus').textContent='Unsaved changes.';$('score').hidden=true;updateScriptTiming(editedScript());resizeScript();});
 window.addEventListener('resize',resizeScript);
 function renderResult(result){
   $('resultSection').hidden=false;$('score').hidden=false;
   $('revisionStatus').textContent=result.revision_notes?'Requested: '+result.revision_notes:'';const parent=current?.parent_script_id||result.parent_script_id;$('openOriginal').hidden=!parent;$('openOriginal').dataset.scriptId=parent||'';
   $('pipelineStatus').textContent=result.pipeline?result.pipeline.draft_model+(result.pipeline.analysis_model?' drafts | '+result.pipeline.analysis_model+' reviews':' writes your script'):'';
+  const cognitive=result.source_video_cognitive;const metrics=$('cognitiveMetrics');metrics.replaceChildren();metrics.hidden=!cognitive;
+  if(cognitive){metrics.append(make('strong','Source video ? cognitive simulation'),make('p','Attention estimate: '+cognitive.attention_retention_score+'/100 | Emotion hypothesis: '+cognitive.emotional_arousal_state+' | WPM: '+(result.source_video_pacing?.wpm??'Unavailable')),make('p',cognitive.psychological_critique),make('p','These estimates describe the source video, not the newly written script.','muted small'));}
+  $('auditDownload').hidden=!(result.audit?.pdf_file==='audit.pdf'&&result.source_video_job_id);
+  if(!$('auditDownload').hidden)$('auditDownload').href='/api/jobs/'+encodeURIComponent(result.source_video_job_id)+'/files/audit.pdf';
   renderScript(result.best.script);
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
@@ -158,6 +162,7 @@ async function init(){
     if(results[5].status==='fulfilled'){engineConfig=results[5].value;if(engineConfig.team_configured)engineConfig.default_backend='team';$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
     if(results[6].status==='fulfilled'){exampleCatalog=results[6].value;renderReferences();}
     active=new URLSearchParams(location.search).get('script')||localStorage.getItem('creator-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('creator-writer-active');}}
+    const sourceVideo=new URLSearchParams(location.search).get('video');if(sourceVideo&&/^[a-f0-9]{32}$/.test(sourceVideo))document.querySelector('[name=source_job_id]').value=sourceVideo;
     if(!new URLSearchParams(location.search).has('script')&&!busy&&engineConfig?.default_backend==='team'){$('writerBackend').value='team';updateEngine();}
   }catch(e){status(e.message,true);}
 }

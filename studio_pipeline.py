@@ -671,3 +671,127 @@ def score_draft_script(script_text, brief, duration):
     """Pre-publication API gate; no local model or GPU stage."""
     from studio_evaluation import score_draft_script as score
     return score(script_text, brief, duration)
+
+
+def extract_audit_frame(video, timestamp, destination):
+    import imageio_ffmpeg
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-nostdin', '-y', '-v', 'error',
+        '-i', str(video), '-ss', str(timestamp), '-frames:v', '1',
+        '-vf', 'scale=640:640:force_original_aspect_ratio=decrease', str(destination)],
+        capture_output=True, check=True, timeout=30,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    if not destination.is_file():
+        raise ValueError('No video frame exists at the cited timestamp.')
+    return destination
+
+
+def run_cognitive_audit(video, output, visual_frames, progress, brief=None):
+    """One audio/simulation pass; below 70, exactly one independently checked rewrite."""
+    import imageio_ffmpeg
+    from studio_av_signals import transcribe_pacing
+    from studio_virality import simulate_cognitive_response
+    from studio_script_writer import system_prompt, FORMATS, validate_final_script, claim_issues
+    from studio_script_team import chat_json, MODEL, nvidia_token
+    from studio_decision_pdf import generate_audit_pdf
+    output = Path(output)
+    reader = imageio_ffmpeg.read_frames(str(video))
+    try:
+        info = next(reader)
+    finally:
+        reader.close()
+    duration = info.get('duration', 0)
+    if not 0 < duration <= 900:
+        raise ValueError('Cognitive review supports videos up to 15 minutes.')
+    # Reject unsupported visual times before giving evidence to the simulator.
+    discarded_frames=sum(not 0 <= f['timestamp'] < duration for f in visual_frames)
+    visual_frames=[f for f in visual_frames if 0 <= f['timestamp'] < duration]
+    if not visual_frames:
+        raise ValueError('Visual evidence is missing or outside the uploaded video.')
+    progress(45, 'Extracting audio and Whisper word timestamps')
+    try:
+        pacing = transcribe_pacing(video, output)
+    except Exception as exc:
+        pacing = {'available': False, 'wpm': None, 'duration_seconds': duration,
+                  'words': [], 'text': '', 'dead_air': [], 'note': 'Audio transcription unavailable: ' + type(exc).__name__}
+    _write_json(output / 'transcript.json', pacing)
+    (output / 'transcript.txt').write_text(pacing['text'], encoding='utf-8')
+    progress(65, 'Cloud simulator is combining visual evidence, transcript and pacing')
+    cognitive = simulate_cognitive_response(visual_frames, pacing['text'], pacing, brief)
+    result = {'cognitive': cognitive, 'pacing': pacing, 'audit': {'triggered': False},
+              'evidence_warnings': ([f'{discarded_frames} out-of-range visual timestamps were excluded.'] if discarded_frames else [])}
+    _write_json(output / 'cognitive_audit.json', result)
+    if cognitive['attention_retention_score'] >= 70:
+        return result
+    progress(80, 'Attention estimate below 70: one script rewrite and PDF audit')
+    kind = 'short' if duration <= 40 else 'mid' if duration <= 90 else 'long'
+    context = dict(brief or {}, content_duration=kind)
+    # Observed transcript is not evidence that the product claims within it are true.
+    context.setdefault('topic', 'Rewrite of the uploaded creator video')
+    context.setdefault('facts', 'No independently verified product facts supplied. Do not add efficacy claims.')
+    audit = {'triggered': True, 'rewrite_attempts': 1, 'rewrite_approved': False, 'final_script': ''}
+    result['audit'] = audit
+    _write_json(output / 'cognitive_audit.json', result)
+    try:
+        prompt = json.dumps({'brief': context, 'original_transcript': pacing['text'],
+                             'psychological_critique': cognitive['psychological_critique']}, ensure_ascii=False)
+        raw, _ = chat_json(nvidia_token(), MODEL, system_prompt(context) +
+                           ' Rewrite once from the critique. Transcript claims are unverified; rely only on brief facts.', prompt,
+                           12000 if kind == 'long' else 2500, .8)
+        candidate = validate_final_script(raw)
+        audit['final_script'] = candidate['final_script']
+        _write_json(output / 'cognitive_audit.json', result)
+        score = score_draft_script(candidate['final_script'], context, kind)
+        import re
+        spoken = re.sub(r'\[[^\]]*\]', '', candidate['final_script'])
+        minimum, maximum = FORMATS[kind][:2]
+        audit['evaluation'] = score
+        blockers = claim_issues(spoken, context)
+        if not minimum <= len(spoken.split()) <= maximum:
+            blockers.append(f'Expected {minimum}-{maximum} spoken words.')
+        if re.search(r"\b(in this video|let['\u2019]s dive in|without further ado)\b", spoken, re.I):
+            blockers.append('Remove filler phrases.')
+        if kind == 'short' and (len(re.split(r'[.!?\n]', spoken, maxsplit=1)[0].split()) >= 12 or '?' in spoken or '\uff1f' in spoken):
+            blockers.append('Short opening must be under 12 words without a question.')
+        if kind == 'mid':
+            sentences = 0
+            cues = 0
+            for part in re.split(r'(\[[^\]]+\])', candidate['final_script']):
+                if part.startswith('['):
+                    cues += 1
+                    if sentences != 3:
+                        blockers.append('Place a cue after every three sentences.')
+                    sentences = 0
+                else:
+                    sentences += len(re.findall(r'[.!?\u0964](?:\s|$)', part))
+            if not cues or sentences > 3:
+                blockers.append('Mid script is missing required pacing cues.')
+        if kind == 'long' and not 3 <= len(re.findall(r'\[SECTION\s+\d+\s*:', candidate['final_script'], re.I)) <= 5:
+            blockers.append('Long script needs three to five inline sections.')
+        audit['blockers'] = list(dict.fromkeys(blockers))
+        audit['rewrite_approved'] = (score['has_cta'] and not score['invented_experience']
+            and score['overall_score'] >= 80 and not blockers)
+    except Exception as exc:
+        audit['rewrite_error'] = 'Rewrite or independent scoring unavailable: ' + type(exc).__name__
+    screenshots = []
+    for index, failure in enumerate(cognitive['failure_timestamps']):
+        try:
+            path = extract_audit_frame(video, failure['timestamp'], output / 'frames' / f'frame_{index}.jpg')
+            screenshots.append({'path': str(path), 'caption': f"{failure['timestamp']:.2f}s: {failure['reason']}"})
+        except (OSError, ValueError, subprocess.SubprocessError):
+            audit.setdefault('warnings', []).append('A cited screenshot could not be extracted.')
+    try:
+        pdf_critique = cognitive['psychological_critique']
+        if audit.get('evaluation'):
+            pdf_critique += ('\n\nRewrite text review: ' + ('APPROVED' if audit['rewrite_approved'] else 'NOT APPROVED')
+                + f" ({audit['evaluation']['overall_score']}/100). " + audit['evaluation']['critique'])
+        if audit.get('rewrite_error'):
+            pdf_critique += '\n\n' + audit['rewrite_error']
+        generate_audit_pdf(pacing['text'], audit['final_script'], pdf_critique, screenshots, output / 'audit.pdf')
+        audit['pdf_file'] = 'audit.pdf'
+    except Exception as exc:
+        audit['pdf_error'] = 'Audit PDF unavailable: ' + type(exc).__name__
+    result['audit'] = audit
+    _write_json(output / 'cognitive_audit.json', result)
+    return result

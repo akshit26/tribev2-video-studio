@@ -11,7 +11,7 @@ class RemoteReviewTests(unittest.TestCase):
                       timestamped_revision_advice='00:01-00:03: Shorten the introduction.')
         with tempfile.TemporaryDirectory() as folder:
             output=Path(folder); video=output/'input.mp4';video.write_bytes(b'original-video')
-            with patch('studio_gemma_video.analyze_virality',new_callable=AsyncMock,return_value=result) as api:
+            with patch('studio_gemma_video.analyze_virality',new_callable=AsyncMock,return_value=result) as api, patch('studio_pipeline.run_cognitive_audit',side_effect=ValueError('No audio')):
                 report=review_video(video,output,lambda *args:None)
             self.assertEqual(report['backend'],'nvidia')
             self.assertEqual(report['dashboard']['status'],'Approved')

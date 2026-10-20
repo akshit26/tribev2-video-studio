@@ -8,6 +8,89 @@ import math
 from pathlib import Path
 
 
+def extract_audio(video, destination):
+    """Decode one mono PCM16 track; bounded FFmpeg, no model or GPU allocation."""
+    import subprocess
+    import imageio_ffmpeg
+    destination = Path(destination)
+    result = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-nostdin', '-y', '-v', 'error',
+        '-i', str(video), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', str(destination)],
+        capture_output=True, timeout=180, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    if result.returncode:
+        raise ValueError('No decodable audio track. Audio pacing is unavailable.')
+    return destination
+
+
+def pacing_from_words(words, duration):
+    """Speech-free intervals, not acoustic silence: background music may remain."""
+    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
+        raise ValueError('Audio duration must be positive.')
+    cleaned = []
+    for word in words:
+        start, end = word.get('start'), word.get('end')
+        if (type(start) not in (int, float) or type(end) not in (int, float)
+                or not math.isfinite(start) or not math.isfinite(end) or not 0 <= start <= end <= duration + .1):
+            raise ValueError('Invalid Whisper word timestamp.')
+        if str(word.get('word', '')).strip():
+            cleaned.append(dict(start=start, end=min(end, duration), word=str(word['word']).strip()))
+    cleaned.sort(key=lambda w: (w['start'], w['end']))
+    gaps, cursor = [], 0.
+    for word in cleaned:
+        if word['start'] - cursor > 1.:
+            gaps.append({'start': round(cursor, 3), 'end': round(word['start'], 3)})
+        cursor = max(cursor, word['end'])
+    if duration - cursor > 1.:
+        gaps.append({'start': round(cursor, 3), 'end': round(duration, 3)})
+    return {'available': True, 'duration_seconds': round(duration, 3), 'word_count': len(cleaned),
+            'wpm': round(len(cleaned) * 60 / duration, 1), 'dead_air': gaps,
+            'words': cleaned, 'text': ' '.join(w['word'] for w in cleaned),
+            'note': 'WPM uses full clip duration. Gaps are ASR speech-free intervals; music/noise may remain.'}
+
+
+def transcribe_pacing(video, output, language='auto'):
+    """Use Groq if explicitly configured; otherwise an already-cached local Whisper."""
+    import json
+    import subprocess
+    import sys
+    import wave
+    from studio_script_nvidia import nvidia_token
+    output = Path(output)
+    wav = extract_audio(video, output / 'audit_audio.wav')
+    with wave.open(str(wav), 'rb') as stream:
+        duration = stream.getnframes() / stream.getframerate()
+    if duration > 900:
+        raise ValueError('Audio analysis supports clips up to 15 minutes.')
+    if language not in {'auto','en','hi'}:
+        language = {'English':'en','Hindi':'hi','Hinglish':'hi','Hindi (Roman)':'hi'}.get(language,'auto')
+    token = nvidia_token('GROQ_API_KEY')
+    if token:
+        from openai import OpenAI
+        with OpenAI(base_url='https://api.groq.com/openai/v1', api_key=token, timeout=180, max_retries=0) as client, wav.open('rb') as audio:
+            response = client.audio.transcriptions.create(model='whisper-large-v3', file=audio,
+                response_format='verbose_json', timestamp_granularities=['word'],
+                **({'language': language} if language != 'auto' else {}))
+        words = response.model_dump().get('words')
+        if not isinstance(words, list):
+            raise ValueError('Whisper returned no word timestamps; pacing cannot be calculated.')
+        model = 'groq/whisper-large-v3'
+    else:
+        root = Path(__file__).resolve().parent
+        candidates = [root / 'cache' / ('faster-whisper-' + name) for name in ('small', 'tiny', 'medium')]
+        local = next((p for p in candidates if (p / 'model.bin').is_file()), None)
+        if local is None:
+            raise ValueError('Configure GROQ_API_KEY or install a local Whisper model for audio pacing.')
+        # A separate process gives local ASR a real cancellation/deadline boundary.
+        target = output / 'audit_words.json'
+        subprocess.run([sys.executable, str(Path(__file__).resolve()), '--audit-asr', str(wav),
+                        str(local), str(target), language], check=True, capture_output=True,
+                       timeout=180, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        words = json.loads(target.read_text(encoding='utf-8'))
+        model = 'local/' + local.name
+    result = pacing_from_words(words, duration)
+    result.update(model=model, language=language)
+    return result
+
+
 def voice_observations(samples, sample_rate=16000, seconds_per_span=10):
     import numpy as np
 
@@ -121,3 +204,15 @@ def visual_observations(output: Path, scenes: list[dict], duration: float, limit
                         "sharpness": round(sharpness, 1)})
     return {"available": bool(sources), "sources": sources,
             "note": "Frame descriptions are fallible; brightness, contrast and sharpness are measured only on sampled images. They do not prove aesthetic quality or reveal every shot."}
+
+
+if __name__ == '__main__':
+    import sys, json
+    if len(sys.argv) != 6 or sys.argv[1] != '--audit-asr':
+        raise SystemExit('This worker is invoked by the audio pacing pipeline.')
+    from faster_whisper import WhisperModel
+    model = WhisperModel(sys.argv[3], device='cpu', compute_type='int8', cpu_threads=4, local_files_only=True)
+    segments, info = model.transcribe(sys.argv[2], word_timestamps=True, beam_size=1,
+        language=None if sys.argv[5]=='auto' else sys.argv[5], vad_filter=True)
+    words = [dict(start=w.start, end=w.end, word=w.word) for segment in segments for w in (segment.words or [])]
+    Path(sys.argv[4]).write_text(json.dumps(words, ensure_ascii=False), encoding='utf-8')

@@ -144,7 +144,7 @@ def _video_data(path):
     return 'data:video/mp4;base64,' + base64.b64encode(data).decode('ascii')
 
 
-async def _analyze(video,model=MODEL):
+async def _analyze(video,model=MODEL,include_evidence=False):
     import httpx
     from openai import AsyncOpenAI, APIError, APIConnectionError, APITimeoutError
     from studio_script_nvidia import nvidia_token
@@ -157,10 +157,10 @@ async def _analyze(video,model=MODEL):
                                timeout=httpx.Timeout(180, connect=180, write=180, pool=180)) as client:
             raw = await client.chat.completions.with_raw_response.create(
                 model=model, messages=[{'role': 'user', 'content':[
-                    {'type': 'text', 'text': PROMPT},
+                    {'type': 'text', 'text': (PROMPT.replace('exactly these fields:', 'these fields and the visual_frames evidence field:').replace('Do not add fields, markdown or commentary.', 'Do not add markdown or commentary.') if include_evidence else PROMPT) + (' For this request add one visual_frames array of up to 8 objects: {timestamp: seconds, observation: concise visible evidence}. Include the first frame and important hook/pacing changes. Describe only pixels you can perceive. Do not infer speech.' if include_evidence else '')},
                     {'type': 'video_url', 'video_url': {'url': media}}]}],
-                temperature=.2, max_tokens=1800, stream=False,
-                extra_body={'chat_template_kwargs': {'enable_thinking': False}},
+                temperature=.2, max_tokens=16384 if include_evidence else 1800, stream=False,
+                extra_body={'chat_template_kwargs': {'enable_thinking': include_evidence}},
                 extra_headers={'NVCF-POLL-SECONDS':'180'})
             if raw.status_code==202:
                 try:pending=raw.http_response.json()
@@ -174,17 +174,31 @@ async def _analyze(video,model=MODEL):
                 raise ViralityAPIError(f'NVIDIA returned unexpected HTTP {raw.status_code}. No score was assigned.')
         if not response.choices or response.choices[0].finish_reason != 'stop':
             raise ViralityAPIError('Video model did not finish the assessment. No verdict was assigned.')
+        if include_evidence:
+            from studio_review_parts import decoded_json
+            raw_result=decoded_json(response.choices[0].message.content)
+            if not isinstance(raw_result,dict):raise ValueError('Video evidence must be JSON.')
+            frames=raw_result.pop('visual_frames',None)
+            if not isinstance(frames,list) or not 1<=len(frames)<=8:
+                raise ValueError('Video review returned no timestamped visual evidence.')
+            for frame in frames:
+                if (not isinstance(frame,dict) or set(frame)!={'timestamp','observation'}
+                    or type(frame['timestamp']) not in (int,float) or not math.isfinite(frame['timestamp']) or frame['timestamp']<0
+                    or not isinstance(frame['observation'],str) or not frame['observation'].strip() or len(frame['observation'])>1200):
+                    raise ValueError('Video model returned invalid frame evidence.')
+            return dict(validate_result(json.dumps(raw_result)),visual_frames=frames)
         return validate_result(response.choices[0].message.content)
     except APITimeoutError:
         raise ViralityAPIError('Video model did not respond before the API timeout. No verdict was assigned.') from None
     except APIConnectionError:
-        raise ViralityAPIError('Connection to NVIDIA failed or closed before the video model returned an assessment. No verdict was assigned.') from None
+        raise ViralityAPIError('Connection to NVIDIA failed or closed before the video model returned an assessment. No verdict was assigned.',
+                               {'transient_connection': True}) from None
     except APIError as exc:
         raise provider_failure(exc,model) from None
 
 
 
-async def analyze_virality(video: Path,model=MODEL) -> dict:
+async def analyze_virality(video: Path,model=MODEL,include_evidence=False) -> dict:
     """Bound the entire operation; safe to await without blocking the event loop.
 
     The video review routes run this in a tracked background job and expose
@@ -192,6 +206,14 @@ async def analyze_virality(video: Path,model=MODEL) -> dict:
     """
     try:
         if model not in MODELS:raise ValueError('Choose a supported video review model.')
-        return await asyncio.wait_for(_analyze(video,model), timeout=180)
+        async def resilient():
+            for attempt in range(2):
+                try:
+                    return await _analyze(video,model,include_evidence)
+                except ViralityAPIError as exc:
+                    if attempt or not exc.diagnostics.get('transient_connection'):
+                        raise
+                    await asyncio.sleep(1)
+        return await asyncio.wait_for(resilient(), timeout=180)
     except TimeoutError:
         raise ViralityAPIError('Video assessment timed out after 180 seconds. No verdict was assigned.') from None

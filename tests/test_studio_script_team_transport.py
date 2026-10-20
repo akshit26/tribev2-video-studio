@@ -9,8 +9,8 @@ class TeamTransportTests(unittest.TestCase):
     def invoke(self, handler, model=team.MODEL, preview=None):
         real=openai.AsyncOpenAI
         def client(**kwargs):
-            self.assertEqual(kwargs['timeout'].read,600)
-            self.assertEqual(kwargs['timeout'].connect,600)
+            self.assertEqual(kwargs['timeout'].read,180)
+            self.assertEqual(kwargs['timeout'].connect,180)
             return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         with patch('openai.AsyncOpenAI',side_effect=client):
             return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview)
@@ -45,7 +45,7 @@ class TeamTransportTests(unittest.TestCase):
     def test_timeout_is_specific_and_not_retried(self):
         calls=[]
         def handler(request):calls.append(request);raise httpx.ReadTimeout('private endpoint detail')
-        with self.assertRaisesRegex(team.HostedWriterError,'within 600 seconds'):self.invoke(handler)
+        with self.assertRaisesRegex(team.HostedWriterError,'within 180 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
     def test_connection_drop_retries_once_with_fresh_client(self):
@@ -92,7 +92,7 @@ class TeamTransportTests(unittest.TestCase):
         identifier='42c8dc9c-eace-4d89-949f-c330a7d2d08b';calls=[]
         def handler(request):
             calls.append(request)
-            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'300')
+            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'180')
             return httpx.Response(202,json={'requestId':identifier})
         result={'id':'queued-result','object':'chat.completion','created':0,'model':team.MODEL,'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]}
         with patch('studio_gemma_video.poll_result',new_callable=AsyncMock,return_value=result) as poll:

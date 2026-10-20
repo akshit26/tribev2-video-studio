@@ -12,7 +12,23 @@ window.renderCreative = function(report,id) {
     add('h3','Hook: '+report.result.hook_score+'/100 | Pacing: '+report.result.pacing_score+'/100 | Overall: '+report.result.overall_probability+'/100');
     add('p',report.result.timestamped_revision_advice);
     add('p',report.dashboard.policy);
-    add('p','Visual assessment only. This model cannot hear audio. Scores are uncalibrated editorial estimates.');
+    if(report.cognitive){
+      const refine=document.createElement('a');refine.textContent='Write a new script from this review';refine.href='/writer?video='+encodeURIComponent(id);refine.className='button';panel.append(refine);
+      const c=report.cognitive;
+      add('h3','Cognitive simulation: attention '+c.attention_retention_score+'/100');
+      add('p','Emotion hypothesis: '+c.emotional_arousal_state+' | Cognitive load warning: '+(c.cognitive_load_warning?'Yes':'No')+' | WPM: '+(report.pacing?.wpm??'Unavailable'));
+      add('p',c.psychological_critique);
+      add('p','Uncalibrated editorial hypotheses; no audience reaction was measured.');
+      for(const gap of report.pacing?.dead_air||[])add('p','Speech-free gap: '+gap.start.toFixed(1)+'–'+gap.end.toFixed(1)+'s');
+      if(report.audit?.triggered){
+        add('h3','One rewrite attempt — '+(report.audit.rewrite_approved?'passed text review':'needs review'));
+        if(report.audit.final_script){const label=document.createElement('label');label.textContent='Revised script';const text=document.createElement('textarea');text.value=report.audit.final_script;text.rows=8;text.style.width='100%';text.setAttribute('aria-label','Revised script');text.readOnly=!report.audit.rewrite_approved;label.append(text);panel.append(label);text.addEventListener('input',()=>{text.style.height='auto';text.style.height=text.scrollHeight+'px';});requestAnimationFrame(()=>{text.style.height=text.scrollHeight+'px';});}
+        if(report.audit.evaluation)add('p','Text score: '+report.audit.evaluation.overall_score+'/100 — '+report.audit.evaluation.critique);
+        if(report.audit.rewrite_error)add('p',report.audit.rewrite_error);
+        if(report.audit.pdf_file==='audit.pdf'){const link=document.createElement('a');link.textContent='Download 3-page audit PDF';link.href='/api/jobs/'+encodeURIComponent(id)+'/files/audit.pdf';link.className='button';panel.append(link);}
+        if(report.audit.pdf_error)add('p',report.audit.pdf_error);
+      }
+    }else add('p','Visual assessment only; cognitive/audio evidence is unavailable. Scores are uncalibrated editorial estimates.');
     const video=document.createElement('video');video.controls=true;video.preload='metadata';video.style.width='100%';video.src='/api/jobs/'+encodeURIComponent(id)+'/video';panel.append(video);
     const download=document.createElement('a');download.textContent='Download review JSON';download.href='/api/jobs/'+encodeURIComponent(id)+'/files/report.json';panel.append(download);
     return;
