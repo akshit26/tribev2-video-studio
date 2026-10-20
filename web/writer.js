@@ -13,7 +13,7 @@ async function api(url, options={}) {
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
 function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
 function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=Number(b.duration);b.hf_credits_allowed=$('hfCreditsAllowed').checked;b.research_id=$('useResearch').checked&&researchCurrent?.status==='completed'?researchCurrent.id:'';return b;}
-function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
+function setBrief(brief){for(const [key,value] of Object.entries({content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=key==='duration'?'30':value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
 function updateContentMode(){
   const hints={organic:'Story, humor or useful discovery first. Product presence stays natural; leave CTA blank for a story ending.',ugc:'Creator voice, phone footage and everyday context. Add real experience above; otherwise the writer uses a first look, observation or staged scene.',paid_ad:'Product-led communication with supported benefits and your chosen CTA.'};
   $('contentModeHint').textContent=hints[$('contentMode').value];
@@ -28,6 +28,7 @@ async function start(mode,hook=null,previous=null,sceneIndex=null,revisionNotes=
   if($('writerBackend').value==='huggingface'&&!$('hfCreditsAllowed').checked){status('Hosted generation is disabled. Use Local for free writing, or explicitly allow HF credit usage.',true);return;}
   if(dirty&&!window.confirm('Starting another generation will replace the editor. Save or copy your edits first. Continue?'))return;
   lock(true);
+  $('hooksSection').hidden=true;
   try{
     clearTimeout(pollTimer);
     const job=await api('/api/scripts',{method:'POST',body:JSON.stringify({mode,brief:getBrief(),selected_hook:hook,use_experiments:$('useExperiments').checked,previous_script:previous,scene_index:sceneIndex,revision_notes:revisionNotes,parent_script_id:previous?active:null})});
@@ -61,7 +62,7 @@ async function poll(){
 
     current=job;lock(false);dirty=false;
     if(!job.hook_options&&!job.result)$('hooks').replaceChildren(make('p','No hooks are ready yet. Retry this saved job or start from the brief.','muted'));
-    if(job.result){renderResult(job.result);try{const draft=await api('/api/scripts/'+active+'/draft');renderScenes(draft);$('score').hidden=true;$('editStatus').textContent='Saved manual edits loaded. This edited draft is unscored.';}catch(e){/* No manually edited draft is normal. */}}
+    if(job.result){renderResult(job.result);try{const draft=await api('/api/scripts/'+active+'/draft');renderScript(draft);$('score').hidden=true;$('editStatus').textContent='Saved manual edits loaded. This edited draft is unscored.';}catch(e){/* No manually edited draft is normal. */}}
     await loadSaved().catch(e=>status('Work is saved, but the saved-work list could not refresh. '+e.message,true));
   }catch(e){
     if(requestedId!==active)return;
@@ -70,6 +71,7 @@ async function poll(){
   }
 }
 function renderHooks(hooks,review={}){
+  $('hooksSection').hidden=false;
   $('hooks').replaceChildren();
   if(review.review_status==='pending')$('hooks').append(make('p','Draft hooks saved. Automated review is in progress.','muted small'));
   if(review.warning)$('hooks').append(make('p',review.warning,'status'));
@@ -84,50 +86,44 @@ function renderHooks(hooks,review={}){
 function updateScriptTiming(script){
   const brief=current?.brief||getBrief();
   $('performanceResult').textContent='';
-  const words=script.scenes.reduce((n,row)=>n+row.spoken.trim().split(/\s+/).filter(Boolean).length,0);
+  const words=scriptText(script).replace(/\[[^\]]*\]/g,'').trim().split(/\s+/).filter(Boolean).length;
   const language=(brief.language||'English').toLowerCase();
   const rates={english:[120,160,2],en:[120,160,2],hindi:[108,168,1.8],'hindi (roman)':[108,168,1.8],hinglish:[120,180,2]};
   const rate=rates[language];
   const seconds=Number(brief.duration);
   $('scriptTiming').textContent=rate?`${words} words | Estimated ${Math.round(words*60/rate[1])}-${Math.round(words*60/rate[0])} seconds in ${brief.language} | Requested ${seconds}s. ${words<Math.floor(seconds*rate[2])?'Too short: develop the story. ':''}Approximate; read aloud to confirm.`:`${words} words | Requested ${seconds}s. Read aloud in the selected language to check timing.`;
 }
-function renderScenes(script){
-  editorBase=structuredClone(script);$('performanceResult').textContent='';
-  $('scriptTitle').textContent=script.title;$('sceneEditor').replaceChildren();
-  updateScriptTiming(script);const scope=$('revisionScope').value;$('revisionScope').replaceChildren(new Option('Whole script',''));script.scenes.forEach((_,i)=>$('revisionScope').add(new Option('Paragraph '+(i+1),String(i))));$('revisionScope').value=scope;
-  script.scenes.forEach((scene,index)=>{
-    const card=make('article',undefined,'scene');
-    card.append(make('span',`PARAGRAPH ${index+1}`,'kicker'));
-    for(const [key,label]of [['spoken','Script']]){
-      const l=make('label',label),t=make('textarea');t.value=scene[key];t.maxLength=1000;t.dataset.scene=index;t.dataset.field=key;
-      t.addEventListener('input',()=>{dirty=true;$('editStatus').textContent='Edited draft is unscored. Save your changes or refine to reassess.';$('score').hidden=true;updateScriptTiming(editedScript());});
-      l.append(t);card.append(l);
-    }
-    const regenerate=make('button','Rewrite this paragraph');
-    regenerate.onclick=async()=>{try{const draft=editedScript();await saveDraft();await start('script',current.result.selected_hook,draft,index);}catch(e){status(e.message,true);}};
-    card.append(regenerate);$('sceneEditor').append(card);
-  });
+function scriptText(script){return typeof script.final_script==='string'?script.final_script:(script.scenes||[]).map(row=>row.spoken||'').join(' ');}
+function resizeScript(){const area=$('finalScript');area.style.height='auto';area.style.height=Math.max(220,area.scrollHeight)+'px';}
+function renderScript(script){
+  editorBase={final_script:scriptText(script)};$('performanceResult').textContent='';
+  $('scriptTitle').textContent='Your script';$('finalScript').value=editorBase.final_script;
+  $('revisionScope').replaceChildren(new Option('Whole script',''));
+  updateScriptTiming(editorBase);resizeScript();
 }
-function editedScript(){const s=structuredClone(editorBase);for(const t of $('sceneEditor').querySelectorAll('textarea'))s.scenes[Number(t.dataset.scene)][t.dataset.field]=t.value;for(const paragraph of s.scenes){paragraph.visual='';paragraph.overlay='';}s.title=$('scriptTitle').textContent;return s;}
+function editedScript(){return {final_script:$('finalScript').value};}
+$('finalScript').addEventListener('input',()=>{dirty=true;$('editStatus').textContent='Unsaved changes.';$('score').hidden=true;updateScriptTiming(editedScript());resizeScript();});
+window.addEventListener('resize',resizeScript);
 function renderResult(result){
   $('resultSection').hidden=false;$('score').hidden=false;
   $('revisionStatus').textContent=result.revision_notes?'Requested: '+result.revision_notes:'';const parent=current?.parent_script_id||result.parent_script_id;$('openOriginal').hidden=!parent;$('openOriginal').dataset.scriptId=parent||'';
-  $('pipelineStatus').textContent=result.pipeline?result.pipeline.draft_model+' drafts | '+result.pipeline.analysis_model+' reviews':'';
+  $('pipelineStatus').textContent=result.pipeline?result.pipeline.draft_model+(result.pipeline.analysis_model?' drafts | '+result.pipeline.analysis_model+' reviews':' writes your script'):'';
   $('tribeStatus').textContent=result.tribe_v2?.reason||'Editorial assessment only. Authentic TRIBE exports and fitted calibration are required for recorded-media ratings.';
-  renderScenes(result.best.script);
+  renderScript(result.best.script);
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
+  if(assessment.score===null)line.replaceChildren(make('p','Script ready. Copy, edit or suggest changes below.'));
   $('score').replaceChildren(line);for(const issue of assessment.blockers||[])$('score').append(make('p','Needs revision: '+issue,'status')); $('editStatus').textContent='Best generated draft shown. Edits will need a fresh assessment.';
   $('history').replaceChildren();
-  for(const round of result.history){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScenes(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
-  $('appliedReferences').replaceChildren();for(const card of library.cards.filter(c=>result.best.script.reference_ids.includes(c.id)))$('appliedReferences').append(make('p',card.title+' · '+card.application,'muted small'));
+  for(const round of result.history){const d=make('details');d.append(make('summary',`Round ${round.round} · ${round.assessment.score}/100`));for(const c of round.assessment.criteria)d.append(make('p',`${c.key}: ${c.grade}/4 · Paragraph ${c.scene} · ${c.reason} Next: ${c.improvement}`));for(const v of round.assessment.blockers)d.append(make('p','Proof gap: '+v));const button=make('button','View this round');button.onclick=()=>{renderScript(round.script);dirty=true;$('score').hidden=true;$('editStatus').textContent=`Round ${round.round} loaded into editor. Save it to export this version.`;};d.append(button);$('history').append(d);}
+  $('appliedReferences').replaceChildren();for(const card of library.cards.filter(c=>(result.best.script.reference_ids||[]).includes(c.id)))$('appliedReferences').append(make('p',card.title+' · '+card.application,'muted small'));
     if(assessment.requested_changes)$('revisionStatus').textContent+=' | '+assessment.requested_changes.reason;
     $('textExport').href='/api/scripts/'+active+'/export';$('printExport').href='/api/scripts/'+active+'/export?format=print';
 }
 async function saveDraft(){if(!current?.result)return;const response=await api('/api/scripts/'+active+'/draft',{method:'PUT',body:JSON.stringify(editedScript())});dirty=false;$('score').hidden=true;$('editStatus').textContent=response.score_status;return response;}
 async function loadSaved(){const rows=await api('/api/scripts');$('savedWork').replaceChildren();for(const row of rows.reverse()){const b=make('button',row.brief.topic+' · '+row.status);b.onclick=async()=>{if(busy)return;if(dirty&&!confirm('Discard unsaved edits and open this draft?'))return;active=row.id;shownHooks='';localStorage.setItem('tribe-writer-active',active);setBrief(row.brief);$('resultSection').hidden=true;$('hooks').replaceChildren();await poll();};$('savedWork').append(b);}if(!rows.length)$('savedWork').append(make('p','Your hooks and scripts will appear here.','muted small'));}
 async function loadExperiments(){const rows=await api('/api/scripts/experiments');$('experiments').replaceChildren();for(const row of rows.reverse()){const d=make('details');d.append(make('summary',row.title+' · '+row.platform),make('p',row.hypothesis),make('p',row.observations),make('p',row.evidence_type,'muted small'));$('experiments').append(d);}}
-$('briefForm').onsubmit=e=>{e.preventDefault();start('hooks');};
+$('briefForm').onsubmit=e=>{e.preventDefault();start('script');};
 $('directButton').onclick=()=>start('script');
 $('retryJob').onclick=async()=>{try{if(dirty&&!confirm('Retry generation? Save or copy your edits first.'))return;lock(true);const localRetry=$('retryJob').dataset.localRetry==='true';await api('/api/scripts/'+active+'/retry',{method:'POST',body:JSON.stringify(localRetry?{writer_backend:'local',local_model:$('localModel').value}:{})});if(localRetry){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}$('retryJob').hidden=true;shownHooks='';poll();}catch(e){status(e.message,true);lock(false);}};
 $('revisionForm').onsubmit=async e=>{
@@ -139,7 +135,7 @@ $('revisionForm').onsubmit=async e=>{
 $('openOriginal').onclick=async()=>{if(busy)return;if(dirty&&!confirm('Save or copy your edits before opening the original. Continue?'))return;try{const id=$('openOriginal').dataset.scriptId;const job=await api('/api/scripts/'+id);active=id;current=job;shownHooks='';shownLive='';localStorage.setItem('tribe-writer-active',id);setBrief(job.brief);await poll();}catch(error){status(error.message,true);}};
 $('saveDraft').onclick=()=>saveDraft().catch(e=>status(e.message,true));
 $('reviseDraft').onclick=async()=>{try{const draft=editedScript();await saveDraft();await start('script',current.result.selected_hook,draft);}catch(e){status(e.message,true);}};
-$('copyScript').onclick=async()=>{try{const s=editedScript();await navigator.clipboard.writeText(s.title+'\n\n'+s.scenes.map(v=>v.spoken).join('\n\n'));$('editStatus').textContent='Script copied.';}catch(e){status('Clipboard unavailable. Save edits and download the text file.',true);}};
+$('copyScript').onclick=async()=>{try{const s=editedScript();await navigator.clipboard.writeText(s.final_script);$('editStatus').textContent='Script copied.';}catch(e){status('Clipboard unavailable. Save edits and download the text file.',true);}};
 for(const id of ['textExport','printExport'])$(id).addEventListener('click',e=>{if(dirty){e.preventDefault();status('Save your edits before exporting.',true);}});
 $('experimentForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/scripts/experiments',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await loadExperiments();status('Experiment observation saved.');}catch(error){status(error.message,true);}};
 async function init(){
@@ -153,7 +149,7 @@ async function init(){
     if(results[4].status==='fulfilled'){personaCatalog=results[4].value.personas;updatePersona();}
     if(results[5].status==='fulfilled'){engineConfig=results[5].value;$('writerBackend').value=engineConfig.default_backend||'local';}updateEngine();
     if(results[6].status==='fulfilled'){exampleCatalog=results[6].value;renderReferences();}
-    active=localStorage.getItem('tribe-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('tribe-writer-active');}}
+    active=new URLSearchParams(location.search).get('script')||localStorage.getItem('tribe-writer-active');if(active){try{current=await api('/api/scripts/'+active);setBrief(current.brief);await poll();}catch(e){localStorage.removeItem('tribe-writer-active');}}
   }catch(e){status(e.message,true);}
 }
 

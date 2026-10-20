@@ -163,7 +163,7 @@ def run_hf_writer(output, request, progress, provider=None):
                 result,usage=provider.complete_stage(token,model,SYSTEM,prompt,tokens,1 if creative else 0,preview,label)
             else:
                 result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
-            if label.startswith('Draft') and 'repair' not in label:
+            if label.startswith('Draft') and 'repair' not in label and 'final_script' not in result:
                 progress(1 + 98*fraction, "Making the speech sound natural")
                 try:
                     if stats['calls_this_run'] >= MAX_CALLS:

@@ -55,7 +55,7 @@ def install(server):
                 state["live_draft"]=json.loads(live_path.read_text(encoding="utf-8"))
             if draft_path.exists() and (not live_path.exists() or draft_path.stat().st_mtime>=live_path.stat().st_mtime):
                 draft=json.loads(draft_path.read_text(encoding="utf-8"))
-                state["live_draft"]={"paragraphs":[s["spoken"] for s in draft["scenes"]],"validated":True,"reviewed":False}
+                state["live_draft"]={"paragraphs":[writer.script_text(draft)],"validated":True,"reviewed":False}
             request=json.loads((path / "review_input.json").read_text(encoding="utf-8"))["script_request"]
             state["revision_notes"]=request.get("revision_notes","")
             state["parent_script_id"]=request.get("parent_script_id")
@@ -100,8 +100,8 @@ def install(server):
                 ok, _, reason = _run_worker("review", path / "unused.mp4", path, "cuda", server.get_system_info()["default_budget_mb"], progress, 1, 99)
                 if not ok:
                     raise RuntimeError(reason)
-            state.update(status="completed", progress=100, stage="Hook options ready" if request["mode"] == "hooks" else "Script revision finished")
-            if request["mode"] == "hooks":
+            state.update(status="completed", progress=100, stage="Script ready" if (path / "script_result.json").exists() else "Hook options ready")
+            if request["mode"] == "hooks" and not (path / "script_result.json").exists():
                 result = json.loads((path / "hooks.json").read_text(encoding="utf-8")) if (path / "hooks.json").exists() else {}
                 if result.get("review_status") in {"needs_review", "unavailable"}:
                     state.update(stage="Hooks saved — review the flagged options", warning=result.get("warning"))
@@ -220,7 +220,7 @@ def install(server):
             from studio_script_performance import validate_dataset, predict
             data=validate_dataset(json.loads(performance_path().read_text(encoding='utf-8')))
             script=writer.validate_script(values.get('script'),state['brief'])
-            spoken=' '.join(r['spoken'] for r in script['scenes'])
+            spoken=writer.script_text(script)
             return predict(data,state['brief'],spoken)
         except FileNotFoundError:
             raise HTTPException(422,'Import real post outcomes first. Kumo cannot estimate audience performance from an editorial score.') from None
@@ -317,7 +317,7 @@ def install(server):
                     raise ValueError("Choose a valid original script.")
                 read(parent_script_id)
             scene_index = values.get("scene_index")
-            if scene_index is not None and (type(scene_index) is not int or previous is None or not 0 <= scene_index < len(previous["scenes"])):
+            if scene_index is not None and (type(scene_index) is not int or previous is None or not 0 <= scene_index < len(previous.get("scenes",[]))):
                 raise ValueError("Choose an existing scene to regenerate.")
             if len(json.dumps(brief, ensure_ascii=False)) > 6500:
                 raise ValueError("Brief and references are too long for the local model. Shorten the facts or deselect experiment notes.")

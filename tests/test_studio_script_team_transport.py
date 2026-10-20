@@ -8,7 +8,10 @@ import studio_script_team as team
 class TeamTransportTests(unittest.TestCase):
     def invoke(self, handler, model=team.MODEL, preview=None):
         real=openai.AsyncOpenAI
-        def client(**kwargs):return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
+        def client(**kwargs):
+            self.assertEqual(kwargs['timeout'].read,180)
+            self.assertEqual(kwargs['timeout'].connect,180)
+            return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         with patch('openai.AsyncOpenAI',side_effect=client):
             return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview)
 
@@ -26,7 +29,7 @@ class TeamTransportTests(unittest.TestCase):
     def test_timeout_is_specific_and_not_retried(self):
         calls=[]
         def handler(request):calls.append(request);raise httpx.ReadTimeout('private endpoint detail')
-        with self.assertRaisesRegex(team.HostedWriterError,'within 60 seconds'):self.invoke(handler)
+        with self.assertRaisesRegex(team.HostedWriterError,'within 180 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
     def test_truncated_completion_cannot_be_saved_as_valid(self):

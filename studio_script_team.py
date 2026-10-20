@@ -6,19 +6,19 @@ from studio_script_hf import HostedWriterError
 
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
-NAME='GPT-OSS draft / Gemma review'
-PROFILE='gptoss-gemma-v5-bounded-review'
+NAME='GPT-OSS single-block writer'
+PROFILE='gptoss-gemma-v6-single-block'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
 
 
 def nvidia_token():return credential('GPT_OSS_API_KEY')
 
 
-def ready():return bool(nvidia_token() and credential('GEMMA_API_KEY'))
+def ready():return bool(nvidia_token())
 
 
 def validate_configuration(brief):
-    if not ready():raise ValueError('Set GPT_OSS_API_KEY and GEMMA_API_KEY on the server.')
+    if not ready():raise ValueError('Set GPT_OSS_API_KEY on the server.')
 
 
 def stage_model(label):
@@ -41,7 +41,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
 
     async def receive():
         async with AsyncOpenAI(base_url=ENDPOINT.rsplit('/',2)[0],api_key=token,
-                timeout=httpx.Timeout(55,connect=5,write=10,pool=5),max_retries=0) as client:
+                timeout=httpx.Timeout(180,connect=180,write=180,pool=180),max_retries=0) as client:
             raw=await client.chat.completions.with_raw_response.create(**body)
             if raw.status_code!=200:
                 raise HostedWriterError(f'{model} request is queued or incomplete (HTTP {raw.status_code}). No completed output was returned; saved drafts are retained.')
@@ -58,10 +58,10 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
         if preview:preview(content)
         return parsed,response.usage.model_dump() if response.usage else {}
 
-    async def bounded():return await asyncio.wait_for(receive(),timeout=60)
+    async def bounded():return await asyncio.wait_for(receive(),timeout=180)
     try:return asyncio.run(bounded())
     except (TimeoutError,APITimeoutError):
-        raise HostedWriterError(f'{model}: NVIDIA did not return output within 60 seconds. Saved drafts are retained; retry later or select another engine.') from None
+        raise HostedWriterError(f'{model}: NVIDIA did not return output within 180 seconds. Saved drafts are retained; retry later or select another engine.') from None
     except APIStatusError as exc:
         hint={401:'API key rejected',403:'model access denied',404:'model unavailable',429:'rate limit or quota reached'}.get(exc.status_code,'provider request failed')
         raise HostedWriterError(f'{model}: {hint} (HTTP {exc.status_code}). Saved drafts are retained.') from None
@@ -109,13 +109,14 @@ def run_team_writer(output,request,progress):
     path=output/'script_result.json'
     if path.exists():
         data=json.loads(path.read_text(encoding='utf-8'))
-        data['pipeline']={'draft_model':MODEL,'analysis_model':GEMMA,'analysis_mode':'Spoken-script analysis and voice editing; no screenplay directions.'}
+        data['pipeline']={'draft_model':MODEL,'analysis_model':None,'analysis_mode':'Single-block script generation; no automatic scene review.'}
         from studio_script_tribe import draft_status
         data['tribe_v2']=draft_status()
         try:
             from studio_script_performance import validate_dataset,predict
             dataset=validate_dataset(json.loads((output.parent/'performance_data.json').read_text(encoding='utf-8')))
-            spoken=' '.join(s['spoken'] for s in data['best']['script']['scenes'])
+            from studio_script_writer import script_text
+            spoken=script_text(data['best']['script'])
             data['performance_prediction']=dict(predict(dataset,request['brief'],spoken),status='estimated')
         except (OSError,ValueError,RuntimeError):
             data['performance_prediction']={'status':'not_available','probability':None,

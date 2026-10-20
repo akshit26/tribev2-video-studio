@@ -163,7 +163,7 @@ class WriterTests(unittest.TestCase):
             paragraph.pop('visual');paragraph.pop('overlay')
         validated=writer.validate_script(raw,brief())
         result={'best':{'script':validated}}
-        self.assertEqual(writer.export_text(result),'Notebook\n\n'+'\n\n'.join(s['spoken'] for s in raw['scenes']))
+        self.assertEqual(writer.export_text(result),' '.join(s['spoken'] for s in raw['scenes']))
         hook={'angle':'The blank page','spoken':'Why is page one the hardest?','payoff':'The next thought matters.'}
         def complete(prompt,tokens,label):
             return {'issues':[]} if label.startswith('Hook critique') else {'hooks':[hook]*5}
