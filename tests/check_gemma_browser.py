@@ -14,13 +14,15 @@ def handle(route):
 with sync_playwright() as p:
     browser=p.chromium.launch(channel='msedge',headless=True,args=['--disable-gpu'])
     page=browser.new_page(viewport={'width':1440,'height':1000});page.on('pageerror',lambda e:errors.append(str(e)))
-    page.route('**/api/jobs/*/gemma-review',handle)
+    page.route('**/api/jobs/*/gemma-review*',handle)
     page.goto(BASE+'/?job='+JOB);page.locator('#gemmaAnalyze').wait_for()
     page.wait_for_function("document.getElementById('gemmaStatus').textContent.startsWith('Ready')")
     page.locator('#gemmaAnalyze').click();page.wait_for_function("document.getElementById('gemmaAnalyze').disabled")
-    state.update(status='completed',result={'hook_score':85,'pacing_score':80,'overall_probability':82,'timestamped_revision_advice':'00:02-00:04: Trim the repeated opening.'},dashboard={'status':'Approved','policy':'Editing policy only; no viral guarantee.'})
+    state.update(status='completed',model='nvidia/nemotron-3.5-super-vl-120b-a12b',result={'hook_score':85,'pacing_score':80,'overall_probability':82,'timestamped_revision_advice':'00:02-00:04: Trim the repeated opening.'},dashboard={'status':'Approved','policy':'Editing policy only; no viral guarantee.'})
     page.wait_for_function("document.getElementById('gemmaScores').textContent.includes('85/100')")
     assert 'Approved' in page.locator('#gemmaScores').inner_text()
+    assert 'Nemotron 3.5 Super VL' in page.locator('#gemmaScores').inner_text()
+    assert page.locator('#videoReviewModel').input_value()=='nvidia/nemotron-3.5-super-vl-120b-a12b'
     page.locator('#gemmaAnalyze').click();page.wait_for_function("document.getElementById('gemmaStatus').textContent.includes('NVIDIA unavailable')")
     assert page.locator('#gemmaScores').inner_text()==''
     page.set_viewport_size({'width':390,'height':844})

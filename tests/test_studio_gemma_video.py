@@ -34,10 +34,11 @@ class GemmaVideoTests(unittest.TestCase):
             (directory/'job.json').write_text(json.dumps({'id':sid,'status':'completed'}))
             (directory/'input.mp4').write_bytes(MP4)
             (directory/'report.json').write_text('{"original":true}')
-            async def success(video):return RESULT
-            async def failure(video):raise gemma.ViralityAPIError('Provider unavailable')
+            async def success(video,model=None):return RESULT
+            async def failure(video,model=None):raise gemma.ViralityAPIError('Provider unavailable')
             with TestClient(server.app,base_url='http://127.0.0.1:8765') as c:
                 self.assertEqual(c.get('/api/jobs/'+sid+'/gemma-review').json()['status'],'not_started')
+                self.assertEqual(c.get('/api/jobs/'+sid+'/gemma-review').json()['default_model'],gemma.NEMOTRON)
                 for outcome,expected in [(success,'completed'),(failure,'failed')]:
                     with patch.object(gemma,'analyze_virality',side_effect=outcome):
                         r=c.post('/api/jobs/'+sid+'/gemma-review');self.assertEqual(r.status_code,202,r.text)
@@ -47,6 +48,7 @@ class GemmaVideoTests(unittest.TestCase):
                             time.sleep(.01)
                         self.assertEqual(state['status'],expected)
                         if expected=='failed':self.assertNotIn('dashboard',state);self.assertNotIn('result',state)
+                        else:self.assertEqual(state['model'],gemma.NEMOTRON)
                 self.assertEqual(json.loads((directory/'report.json').read_text()),{'original':True})
                 self.assertEqual(c.post('/api/jobs/invalid/gemma-review').status_code,404)
                 (directory/'input.mp4').unlink()
@@ -70,3 +72,34 @@ class GemmaProvenanceAuditTests(unittest.TestCase):
                 for corrupted in [[],{},dict(state,result={'hook_score':100})]:
                     path.write_text(json.dumps(corrupted));result=c.get(url).json()
                     self.assertEqual(result['status'],'failed');self.assertNotIn('result',result)
+
+class NvidiaGatewayTests(unittest.TestCase):
+    def test_gateway_error_is_distinct_from_a_client_timeout(self):
+        request=httpx.Request('POST','https://integrate.api.nvidia.com/v1/chat/completions')
+        response=httpx.Response(504,request=request,headers={'nvcf-status':'errored','nvcf-reqid':'11111111-1111-4111-8111-111111111111'})
+        error=openai.APIStatusError('private provider message',response=response,body=None)
+        result=gemma.provider_failure(error)
+        self.assertIn('HTTP 504',str(result));self.assertIn('errored',str(result))
+        self.assertEqual(result.diagnostics['http_status'],504)
+        self.assertEqual(result.diagnostics['provider_status'],'errored')
+        self.assertNotIn('private provider message',str(result))
+    def test_pending_uuid_cannot_be_an_arbitrary_url(self):
+        with self.assertRaises(gemma.ViralityAPIError):gemma.request_id({'nvcf-reqid':'https://example.com/steal'})
+    def test_tagged_gemma_reasoning_is_discarded(self):
+        result=gemma.validate_result('<|channel>thought\nPRIVATE REASONING<channel|>'+json.dumps(RESULT))
+        self.assertEqual(result,RESULT);self.assertNotIn('PRIVATE',str(result))
+    def test_accepted_request_is_polled_without_resubmission(self):
+        real=openai.AsyncOpenAI;calls=[]
+        identifier='11111111-1111-4111-8111-111111111111'
+        def handler(request):
+            calls.append(request)
+            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'180')
+            return httpx.Response(202,headers={'nvcf-reqid':identifier},json={'requestId':identifier})
+        def client(**kwargs):return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
+        async def poll(token,rid):
+            self.assertEqual(rid,identifier)
+            return {'id':'pending-test','object':'chat.completion','created':0,'model':gemma.MODEL,'choices':[{'index':0,'message':{'role':'assistant','content':json.dumps(RESULT)},'finish_reason':'stop'}]}
+        with tempfile.TemporaryDirectory() as folder,patch('openai.AsyncOpenAI',side_effect=client),patch('studio_script_nvidia.nvidia_token',return_value='test-key'),patch.object(gemma,'poll_result',side_effect=poll):
+            path=Path(folder)/'input.mp4';path.write_bytes(MP4)
+            self.assertEqual(asyncio.run(gemma.analyze_virality(path)),RESULT)
+        self.assertEqual(len(calls),1)
