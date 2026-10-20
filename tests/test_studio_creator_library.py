@@ -23,8 +23,9 @@ class CreatorLibraryTests(unittest.TestCase):
     def test_creator_principles_reach_prompt_and_saved_reference_metadata(self):
         brief = writer.brief_values(dict(topic='Notebook', facts='80 blank pages',
                                         content_duration='short', content_mode='ugc'))
-        text = ('My shopping list has a side hustle. This notebook has 80 blank pages. '
-                'One can hold groceries; another can hold the ridiculous business idea that arrives '
+        text = ('[B-ROLL: Forgotten grocery item beside an empty shopping list] My shopping list has a side hustle. '
+                '[B-ROLL: Open notebook showing blank pages] This notebook has 80 blank pages. '
+                '[B-ROLL: Write missing groceries on a page] One can hold groceries; another can hold the ridiculous business idea that arrives '
                 'while you remember the onions. Give those thoughts somewhere to land. Buy the notebook.')
         complete = Mock(return_value={'final_script': text})
         gate = dict(has_cta=True, has_visual_demo=False, invented_experience=False,

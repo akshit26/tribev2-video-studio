@@ -12,8 +12,9 @@ from studio_evaluation import (
 
 GOOD = dict(has_cta=True, has_visual_demo=True, invented_experience=False,
             overall_score=90, critique='Grounded demo and conversational close.')
-SCRIPT = ('Wet drain hair is a hard no. This silicone catcher sits over the drain and catches loose hair. '
-          'Just lift it up, peel the hair off, give it a rinse, and use it again. '
+SCRIPT = ('[B-ROLL: Wet hair clump on drain] If drain hair makes you gag, watch this. '
+          '[B-ROLL: Place silicone catcher over drain] This silicone catcher sits over the drain and catches loose hair. '
+          '[B-ROLL: Lift catcher and remove collected hair] Just lift it up, peel the hair off, give it a rinse, and use it again. '
           'Grab one before your next shower.')
 
 
@@ -78,7 +79,7 @@ class CreatorCadenceTests(unittest.TestCase):
     def test_hook_limit_and_conversational_cleanup_preserve_safety(self):
         brief=self.brief()
         self.assertEqual(writer.final_script_issues({'final_script':SCRIPT},brief),[])
-        too_long=SCRIPT.replace('Wet drain hair is a hard no.', 'This wet drain hair is really just an absolute hard no.')
+        too_long=SCRIPT.replace('If drain hair makes you gag, watch this.', 'This wet drain hair is really just an absolute hard no.')
         self.assertIn('under 10 words',' '.join(writer.final_script_issues({'final_script':too_long},brief)))
         for bad in (SCRIPT.replace('peel the hair off, ',''),
                     SCRIPT.replace('catches loose hair','catches every strand'),
@@ -94,6 +95,50 @@ class CreatorCadenceTests(unittest.TestCase):
             self.assertIn('respecting the selected writing system',prompt)
             self.assertNotIn('a simple Buy one CTA is enough',prompt)
             self.assertIn('unless creator notes actually confirm it',prompt)
+
+    def test_visual_cues_are_mandatory_and_not_spoken_words(self):
+        import re
+        plain=re.sub(r'\[[^\]]*\]','',SCRIPT)
+        self.assertEqual(writer.spoken_word_count(SCRIPT),writer.spoken_word_count(plain))
+        for cues in ('', '[B-ROLL: Wet hair] ', '[B-ROLL: Wet hair] [B-ROLL: Product] ',
+                     '[B-ROLL: Wet hair] [B-ROLL: Product] [B-ROLL: ] ',
+                     '[SECTION 1: Problem] [SECTION 2: Product] [SECTION 3: Payoff] '):
+            with self.subTest(cues=cues):
+                issues=writer.final_script_issues({'final_script':cues+plain},self.brief())
+                self.assertIn('at least three',' '.join(issues))
+        self.assertEqual(writer.final_script_issues({'final_script':SCRIPT},self.brief()),[])
+
+    def test_missing_visuals_get_one_rewrite_without_remote_grading(self):
+        import re
+        plain=re.sub(r'\[[^\]]*\]','',SCRIPT)
+        complete=Mock(side_effect=[{'final_script':plain},{'final_script':SCRIPT}])
+        with patch('studio_pipeline.score_draft_script',return_value=GOOD) as score:
+            result=writer.write_final_script({'brief':self.brief()},complete,lambda _:None,lambda *args:None)
+        self.assertTrue(result['approved'])
+        self.assertEqual(complete.call_count,2)
+        self.assertEqual(score.call_count,1)
+        self.assertIn('at least three',complete.call_args.args[0])
+
+    def test_bland_problem_declarations_are_rejected_before_scoring(self):
+        for hook in ('Drain hair is the worst.', 'Drain clogs are annoying.'):
+            bad=SCRIPT.replace('If drain hair makes you gag, watch this.',hook)
+            self.assertIn('bland hook',' '.join(writer.final_script_issues({'final_script':bad},self.brief())))
+
+    def test_visual_directions_cannot_invent_product_promises(self):
+        bad=SCRIPT.replace('[B-ROLL: Place silicone catcher over drain]',
+                           '[B-ROLL: Product catches every strand]')
+        self.assertIn('Unsupported universal collection',' '.join(writer.final_script_issues({'final_script':bad},self.brief())))
+
+    def test_all_format_prompts_include_ordered_visual_beats(self):
+        for kind in ('short','mid','long'):
+            brief=self.brief()
+            brief['content_duration']=kind
+            for prompt in (writer.system_prompt(brief),writer.final_script_guidance(brief)):
+                self.assertIn('at least three',prompt)
+                self.assertLess(prompt.index('Frame 1'),prompt.index('Frame 2'))
+                self.assertLess(prompt.index('Frame 2'),prompt.index('Frame 3'))
+                self.assertNotIn('spoken words only',prompt)
+            self.assertNotIn('every 3 sentences',writer.system_prompt(brief))
 
 
 if __name__=='__main__':

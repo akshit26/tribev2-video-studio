@@ -5,7 +5,13 @@ import studio_script_writer as writer
 from studio_evaluation import validate_draft_score,score_draft_script
 
 GOOD=dict(has_cta=True,has_visual_demo=True,invented_experience=False,overall_score=87,critique='Specific hook, grounded demo and clear purchase action.')
-SHORT='Drain hair looks like a tiny swamp creature. A silicone catcher sits over the drain and catches loose hair. When you are done, lift it, remove the hair, give it a rinse, and reuse it. Grab one before your next shower.'
+VISUALS=('[B-ROLL: Wet hair clump on drain] ', '[B-ROLL: Place silicone catcher over drain] ', '[B-ROLL: Lift catcher and remove collected hair] ')
+
+def with_visuals(text):
+    parts=text.split('. ',2)
+    return '. '.join(cue+part for cue,part in zip(VISUALS,parts))
+
+SHORT=with_visuals('Drain hair looks like a tiny swamp creature. A silicone catcher sits over the drain and catches loose hair. When you are done, lift it, remove the hair, give it a rinse, and reuse it. Grab one before your next shower.')
 
 class MultiFormatTests(unittest.TestCase):
     def run_draft(self,kind='short',texts=None,scores=None):
@@ -60,7 +66,7 @@ class MultiFormatTests(unittest.TestCase):
         mid=' '.join('Fresh detail adds something useful. Another point makes it clearer. Buy this practical product today. [B-ROLL: fast zoom]' for _ in range(10))
         long=' '.join('[SECTION '+str(i)+': Detail] '+' '.join(['Useful detail explains a choice.' for _ in range(80)]) for i in range(1,5))
         for kind,text in [('mid',mid),('long',long)]:
-            result,complete,score=self.run_draft(kind=kind,texts=[text])
+            result,complete,score=self.run_draft(kind=kind,texts=[with_visuals(text)])
             self.assertTrue(result['approved'],result['best']['assessment']['blockers'])
             self.assertEqual(score.call_args.args[2],kind)
             if kind=='long':self.assertGreater(complete.call_args.args[1],4096)
@@ -70,11 +76,11 @@ class MultiFormatTests(unittest.TestCase):
             result,complete,score=self.run_draft(texts=[text,text],scores=[GOOD,GOOD])
             self.assertFalse(result['approved']);self.assertEqual(complete.call_count,2)
 
-    def test_mid_misplaced_cues_cannot_pass_even_with_high_score(self):
+    def test_mid_missing_required_cues_cannot_pass_even_with_high_score(self):
         text=' '.join(['Fresh detail adds something useful.' for _ in range(30)])+' [B-ROLL: fast zoom]'
         result,complete,score=self.run_draft(kind='mid',texts=[text,text],scores=[GOOD,GOOD])
         self.assertFalse(result['approved']);self.assertEqual(complete.call_count,2)
-        self.assertIn('three sentences',' '.join(result['best']['assessment']['blockers']))
+        self.assertIn('at least three',' '.join(result['best']['assessment']['blockers']))
 
     def test_smart_apostrophe_filler_cannot_pass_high_score(self):
         text='Let'+chr(0x2019)+'s dive in. '+SHORT
@@ -92,7 +98,7 @@ class MultiFormatTests(unittest.TestCase):
             self.assertEqual(score_draft_script(SHORT,{'facts':'Silicone'},'short'),GOOD)
         payload=json.loads(call.call_args.args[3]);self.assertEqual(payload['script_text'],SHORT)
         self.assertIn('35-60',payload['duration_rules'])
-        self.assertEqual(payload['spoken_word_count'],len(SHORT.split()))
+        self.assertEqual(payload['spoken_word_count'],writer.spoken_word_count(SHORT))
 
     def test_locally_invalid_first_draft_skips_remote_score_and_rewrites_once(self):
         result,complete,score=self.run_draft(texts=['Buy it now.',SHORT],scores=[GOOD])
@@ -125,7 +131,7 @@ class MultiFormatTests(unittest.TestCase):
         brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone insert catches loose hair. Lift, remove hair and rinse.',language='Hindi',content_duration='short'))
         text=('बालों का गुच्छा छोटे राक्षस जैसा लगता है। सिलिकॉन का यह कैचर नाली पर ढीले बाल पकड़ता है। '
               'इसे उठाओ, बाल निकालो, पानी से धोओ और फिर इस्तेमाल करो। अपने शावर के लिए यह हेयर कैचर खरीदो।')
-        self.assertEqual(writer.final_script_issues({'final_script':text},brief),[])
+        self.assertEqual(writer.final_script_issues({'final_script':''.join(VISUALS)+text},brief),[])
 
     def test_selected_hook_reaches_direct_writer_without_unsafe_claims(self):
         brief=writer.brief_values(dict(topic='Hair catcher',facts='Silicone catcher catches loose hair.',content_duration='short'))
@@ -175,6 +181,7 @@ class MultiFormatTests(unittest.TestCase):
                  'This silicone insert sits over the drain, catches loose hair, then you lift it, rinse it, reuse it. Tap to buy one now.')
         self.assertIn('removing collected hair',' '.join(writer.claim_issues(missing,brief)))
         corrected=missing.replace('lift it, rinse it, reuse it','lift it, remove the hair, rinse it, reuse it')
+        missing,corrected=with_visuals(missing),with_visuals(corrected)
         self.assertEqual(writer.claim_issues(corrected,brief),[])
         complete=Mock(side_effect=[{'final_script':missing},{'final_script':corrected}])
         with patch('studio_pipeline.score_draft_script',return_value=GOOD) as scorer:
@@ -218,6 +225,7 @@ class MultiFormatTests(unittest.TestCase):
         brief=writer.brief_values(dict(topic='Silicone hair catcher',facts='Reusable silicone insert catches loose hair. Lift, remove collected hair, rinse and reuse.',content_duration='short'))
         text=('Those hair boulders in the drain, wow. Just slide this reusable silicone insert over the drain, it catches hair. '
               'Lift it, dump the collected hair, rinse, then reuse immediately. Grab one today through the link in bio.')
+        text=with_visuals(text)
         for verb in ('dump','tip','toss','empty','clear','scrape'):
             self.assertEqual(writer.final_script_issues({'final_script':text.replace('dump',verb)},brief),[])
         self.assertIn('removing collected hair',' '.join(writer.claim_issues('Lift it; it automatically dumps the hair. Rinse and reuse.',brief)))
@@ -227,7 +235,7 @@ class MultiFormatTests(unittest.TestCase):
         text=('Picture this\u2014shower drain turning into a hair buffet. A slick silicone disc slides over the drain, scoops every stray strand. '
               'Just lift it, dump the clogs, rinse it, and slap it back. Buy one.')
         for dash in ('\u2013','\u2014'):
-            speech=text.replace('\u2014',dash)
+            speech=with_visuals(text.replace('\u2014',dash))
             self.assertEqual(writer.spoken_word_count(speech+' [Hold product]'),35)
             issues=writer.final_script_issues({'final_script':speech},brief)
             self.assertEqual(len(issues),1)
