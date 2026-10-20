@@ -417,6 +417,9 @@ install_brand_routes(sys.modules[__name__])
 from studio_script_routes import install as install_script_routes
 install_script_routes(sys.modules[__name__])
 
+from studio_gemma_routes import install as install_gemma_routes
+install_gemma_routes(sys.modules[__name__])
+
 if __name__ == "__main__":
     import uvicorn
     print("Tribe Video Studio: http://127.0.0.1:8765", flush=True)
