@@ -45,9 +45,9 @@ async function poll(){
     pollFailures=0;
     const elapsed=job.elapsed_seconds?` · ${Math.round(job.elapsed_seconds)}s elapsed`:'';
     status(job.stage+elapsed+(job.error?' · '+job.error:''),job.status==='failed');
-    if(job.status==='failed'&&['huggingface','nvidia','team'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
-    $('retryJob').textContent=['huggingface','nvidia','team'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
-    $('retryJob').dataset.localRetry=['huggingface','nvidia','team'].includes(job.brief?.writer_backend)?'true':'false';
+    if(job.status==='failed'&&['huggingface','nvidia'].includes(job.brief?.writer_backend)){$('writerBackend').value='local';$('hfCreditsAllowed').checked=false;updateEngine();}
+    $('retryJob').textContent=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'Retry locally (free)':'Retry saved job';
+    $('retryJob').dataset.localRetry=['huggingface','nvidia'].includes(job.brief?.writer_backend)?'true':'false';
     $('retryJob').hidden=job.status!=='failed'&&!(job.status==='completed'&&['needs_review','unavailable'].includes(job.hook_options?.review_status));
     if(job.hook_options&&shownHooks!==JSON.stringify(job.hook_options)){
       renderHooks(job.hook_options.hooks,job.hook_options);shownHooks=JSON.stringify(job.hook_options);

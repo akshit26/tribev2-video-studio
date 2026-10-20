@@ -1,15 +1,13 @@
 """GPT-OSS drafts, Gemma reviews; editorial scores never masquerade as TRIBE."""
 import json
 import sys
-import urllib.request
-import urllib.error
 from studio_script_nvidia import nvidia_token as credential
 from studio_script_hf import HostedWriterError
 
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
 NAME='GPT-OSS draft / Gemma review'
-PROFILE='gptoss-gemma-v1-logic-only'
+PROFILE='gptoss-gemma-v2-bounded-stream'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
 
 
@@ -28,28 +26,56 @@ def stage_model(label):
 
 
 def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None):
+    """Stream content with an overall deadline; never expose reasoning tokens."""
+    import asyncio
+    import httpx
     body={'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':prompt}],
-        'temperature':.5 if model==GEMMA else 1,'top_p':.95 if model.startswith('meta/muse') else 1,
-        'max_tokens':8192 if model.startswith('meta/muse') else 4096,'stream':False}
-    request=urllib.request.Request(ENDPOINT,data=json.dumps(body,ensure_ascii=False).encode('utf-8'),
-        headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
-    try:
-        with urllib.request.urlopen(request,timeout=120) as response:
-            if response.status!=200:raise HostedWriterError('Writer response is pending. Saved drafts are retained.')
-            data=json.loads(response.read(2_000_001))
-        choice=data['choices'][0]
-        if choice.get('finish_reason')=='length':raise ValueError('Model output reached its limit; return shorter JSON.')
-        if choice.get('finish_reason')!='stop':raise HostedWriterError('Model could not complete this stage. Saved drafts are retained.')
+        'temperature':max(0,min(1,temperature)),'top_p':.95 if model.startswith('meta/muse') else 1,
+        'max_tokens':8192 if model.startswith('meta/muse') else min(4096,max(1024,max_tokens+512)),
+        'stream':True}
+    if model==MODEL:body['reasoning_effort']='low'
+    if model==GEMMA:body['chat_template_kwargs']={'enable_thinking':False}
+
+    async def receive():
+        content='';usage={};finished=False;size=0
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20,connect=5,write=10,pool=5)) as client:
+            async with client.stream('POST',ENDPOINT,json=body,
+                    headers={'Authorization':'Bearer '+token,'Accept':'text/event-stream'}) as response:
+                if response.status_code!=200:
+                    raise HostedWriterError(f'Writing pipeline unavailable (HTTP {response.status_code}). Check model access or quota. Saved drafts are retained.')
+                async for line in response.aiter_lines():
+                    size+=len(line.encode('utf-8'))
+                    if size>2_000_000:raise HostedWriterError('Model response exceeded its size limit. Saved drafts are retained.')
+                    if not line.startswith('data:'):continue
+                    payload=line[5:].strip()
+                    if payload=='[DONE]':break
+                    chunk=json.loads(payload)
+                    if chunk.get('error'):raise HostedWriterError('Model stream reported an error. Saved drafts are retained.')
+                    if chunk.get('usage'):usage=chunk['usage']
+                    choices=chunk.get('choices') or []
+                    if not choices:continue
+                    choice=choices[0];piece=(choice.get('delta') or {}).get('content')
+                    if isinstance(piece,str):
+                        content+=piece
+                        if preview:preview(content)
+                    reason=choice.get('finish_reason')
+                    if reason=='length':raise ValueError('Model output reached its limit; return shorter JSON.')
+                    if reason=='stop':finished=True
+                    elif reason is not None:raise HostedWriterError('Model could not complete this stage. Saved drafts are retained.')
+        if not finished:raise HostedWriterError('Model stream ended before completion. Saved drafts are retained.')
         from studio_review_parts import decoded_json
-        content=choice['message']['content']
         parsed=decoded_json(content)
         if not isinstance(parsed,dict):raise ValueError('Return the requested JSON object without commentary.')
-        if preview:preview(content)
-        return parsed,data.get('usage',{})
-    except urllib.error.HTTPError as exc:
-        raise HostedWriterError(f'Writing pipeline unavailable (HTTP {exc.code}). Check model access or quota. No provider fallback or automatic transport retry was used.') from None
-    except (OSError,KeyError,IndexError,TypeError,AttributeError,json.JSONDecodeError):
-        raise HostedWriterError('Writing pipeline connection failed or returned unreadable output. Saved drafts are retained.') from None
+        return parsed,usage
+
+    async def bounded():return await asyncio.wait_for(receive(),timeout=60)
+    try:return asyncio.run(bounded())
+    except (TimeoutError,httpx.TimeoutException):
+        raise HostedWriterError(f'{model} timed out (20 seconds without data or 60 seconds total). Saved drafts are retained; retry later or select another engine.') from None
+    except httpx.HTTPError:
+        raise HostedWriterError(f'{model} connection failed. Saved drafts are retained; retry later or select another engine.') from None
+    except (KeyError,IndexError,TypeError,AttributeError,json.JSONDecodeError,UnicodeError):
+        raise HostedWriterError('Model returned an unreadable stream. Saved drafts are retained.') from None
 
 
 def complete_stage(token,model,system,prompt,tokens,temperature,preview,label):
