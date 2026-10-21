@@ -92,52 +92,9 @@ class NvidiaTests(unittest.TestCase):
             hf.validate_configuration(brief)
         self.assertEqual(brief['writer_backend'], 'nvidia')
 
-    def test_stream_ignores_reasoning_and_empty_choices_and_parses_json(self):
-        chunks = [{'choices':[]}, {'choices':[{'delta':{'reasoning_content':'PRIVATE THOUGHTS'}}]},
-                  answer('{"ok":', None), answer('true}'), {'choices':[], 'usage':{'total_tokens':42}}]
-        previews = []
-        with patch.object(n.urllib.request, 'urlopen') as send:
-            send.return_value.__enter__.return_value = stream(chunks)
-            result, usage = n.chat_completion('nvapi-TEST', n.MODEL, 'system', 'prompt', 1200, 1, previews.append)
-            req = send.call_args.args[0]
-        body = json.loads(req.data)
-        self.assertEqual(body['model'], n.MODEL)
-        self.assertTrue(body['stream'])
-        self.assertEqual(body['chat_template_kwargs'], {'enable_thinking':True})
-        self.assertEqual(body['reasoning_effort'],'high')
-        self.assertEqual(req.get_header('Authorization'), 'Bearer nvapi-TEST')
-        self.assertEqual(result, {'ok':True})
-        self.assertEqual(usage, {'total_tokens':42})
-        self.assertEqual(previews[-1], '{"ok":true}')
-        self.assertNotIn('PRIVATE', str(previews))
 
-    def test_truncated_invalid_and_filtered_results(self):
-        for chunks, error in [([answer(reason='length')], ValueError),
-                              ([answer('not JSON')], ValueError),
-                              ([answer(reason=None)], hf.HostedWriterError),
-                              ([answer(reason='content_filter')], hf.HostedWriterError),
-                              ([{'error':{'message':'nvapi-TESTSECRET'}}], hf.HostedWriterError)]:
-            with self.subTest(chunks=chunks), patch.object(n.urllib.request, 'urlopen') as send:
-                send.return_value.__enter__.return_value = stream(chunks)
-                with self.assertRaises(error) as caught:
-                    n.chat_completion('nvapi-TESTSECRET', n.MODEL, 's', 'p', 100, 0)
-                self.assertNotIn('nvapi-TESTSECRET', str(caught.exception))
-                self.assertEqual(send.call_count, 1)
 
-    def test_transport_errors_are_sanitized_and_not_retried(self):
-        for code in (400,401,402,403,404,429,500):
-            exc = urllib.error.HTTPError(n.ENDPOINT, code, 'nvapi-TESTSECRET', None, None)
-            with patch.object(n.urllib.request, 'urlopen', side_effect=exc) as send:
-                with self.assertRaises(hf.HostedWriterError) as caught:
-                    n.chat_completion('nvapi-TESTSECRET', n.MODEL, 's', 'p', 100, 0)
-                self.assertNotIn('nvapi-TESTSECRET', str(caught.exception))
-                self.assertEqual(send.call_count, 1)
 
-    def test_stream_failure_after_valid_json_does_not_accept_partial_result(self):
-        with patch.object(n.urllib.request, 'urlopen') as send:
-            send.return_value.__enter__.return_value = stream([answer(reason=None)], done=False)
-            with self.assertRaises(hf.HostedWriterError):
-                n.chat_completion('nvapi-TEST', n.MODEL, 's', 'p', 100, 0)
 
     def test_checkpoint_preview_and_shared_revision_pipeline(self):
         brief = writer.brief_values({'topic':'Notebook','facts':'80 pages','writer_backend':'nvidia'})
@@ -160,6 +117,14 @@ class NvidiaTests(unittest.TestCase):
             self.assertFalse((path/'hf_writer_checkpoint.json').exists())
             for file in path.glob('*.json'):
                 self.assertNotIn('nvapi-TESTSECRET', file.read_text())
+
+    def test_ultra_uses_shared_resilient_transport(self):
+        previews=[]
+        with patch('studio_script_team.chat_json',return_value=({'ok':True},{})) as shared:
+            result,_=n.chat_completion('test',n.MODEL,'system','prompt',1200,.7,previews.append)
+        self.assertEqual(result,{'ok':True})
+        self.assertEqual(shared.call_args.args[:6],('test',n.MODEL,'system','prompt',1200,.7))
+
 
 
 if __name__ == '__main__':

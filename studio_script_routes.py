@@ -129,7 +129,7 @@ def install(server):
             state.update(status="completed", progress=100, stage="Script ready" if (path / "script_result.json").exists() else "Hook options ready")
             if (path / 'script_result.json').exists():
                 saved=json.loads((path / 'script_result.json').read_text(encoding='utf-8'))
-                if saved.get('approved') is True:state.update(stage='Script approved by pre-scoring gate')
+                if saved.get('approved') is True:state.update(stage='Edited script and three hooks ready' if saved.get('pipeline_version')=='actor-critic-v1' else 'Script approved by pre-scoring gate')
                 if saved.get('quality_status')=='needs_review':state.update(stage='Draft saved; revise the flagged issues',warning='This draft has not passed the writing constraints.')
             if request["mode"] == "hooks" and not (path / "script_result.json").exists():
                 result = json.loads((path / "hooks.json").read_text(encoding="utf-8")) if (path / "hooks.json").exists() else {}
@@ -442,7 +442,7 @@ def install(server):
             raise HTTPException(409, "No completed draft is available yet.")
         result = state["result"]
         if result.get('approved') is False:
-            raise HTTPException(409,'This script has not passed pre-scoring. Generate an approved revision before exporting.')
+            raise HTTPException(409,'This script has unresolved checks. Generate an approved revision before exporting.')
         edited = directory(script_id) / "edited_script.json"
         if edited.exists():
             result["best"]["script"] = json.loads(edited.read_text(encoding="utf-8"))

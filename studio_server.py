@@ -49,7 +49,7 @@ _logger = logging.getLogger("studio")
 
 def get_system_info() -> dict:
     from studio_script_nvidia import nvidia_token
-    return {"review_backend":"nvidia", "review_configured":bool(nvidia_token('GEMMA_API_KEY') or nvidia_token()),
+    return {"review_backend":"nvidia", "review_configured":bool(nvidia_token('COGNITIVE_API_KEY') or nvidia_token('GEMMA_API_KEY') or nvidia_token()),
             "max_budget_mb":4096, "default_budget_mb":4096, "cuda_ready":False, "gpu":{"available":False}}
 
 

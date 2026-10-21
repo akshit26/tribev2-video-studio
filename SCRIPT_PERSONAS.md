@@ -1,6 +1,6 @@
 # Writer personas
 
-Spoken words only: original voices, not copies of named writers or characters. One creator by default; organic storytelling and UGC unless Paid ad is selected.
+Original spoken voices with brief inline visual cues, not copies of named writers or characters. One creator by default; organic storytelling and UGC unless Paid ad is selected.
 
 | Persona | Best for | Writing approach |
 | --- | --- | --- |

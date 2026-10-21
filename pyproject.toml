@@ -43,6 +43,8 @@ py-modules = [
   "studio_decision_pdf",
   "studio_estimate",
   "studio_evaluation",
+  "studio_editor",
+  "studio_persona_lookup",
   "studio_gemma_routes",
   "studio_gemma_video",
   "studio_gpu_monitor",

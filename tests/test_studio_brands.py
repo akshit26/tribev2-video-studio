@@ -15,6 +15,22 @@ from studio_brand_output import brand_html
 
 
 class BrandTests(unittest.TestCase):
+    def test_unified_cognitive_review_can_supply_reference_and_feedback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);brand=brands.new_brand(root,'Creator product')
+            job_id='f'*32;output=root/job_id;output.mkdir()
+            report=dict(backend='nvidia',video={'name':'creator.mp4','duration_seconds':12},result={},
+                cognitive=dict(attention_retention_score=77,emotional_arousal_state='Curiosity',cognitive_load_warning=False,
+                    psychological_critique='Opening shows the product.',visual_observations=[dict(timestamp=1.,observation='Creator holds the product.')]),
+                pacing=dict(available=True,text='Real creator words.',language='en',duration_seconds=12),context={})
+            (output/'report.json').write_text(json.dumps(report),encoding='utf-8')
+            brands.register_reference(root,brand['id'],job_id,{'views':100})
+            reference=brands.snapshot(root,brand['id'])['references'][0]
+            self.assertEqual(reference['score'],77)
+            self.assertIn('Creator holds the product.',str(reference))
+            profile=brands.save_feedback(root,brand['id'],'e'*32,report,{'team_rating':80})
+            self.assertEqual(profile['feedback'][0]['base_score'],77)
+
     def test_cloud_reference_registration_snapshot_and_feedback_use_real_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);brand=brands.new_brand(root,'Creator product')

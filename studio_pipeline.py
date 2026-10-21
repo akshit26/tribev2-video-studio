@@ -673,6 +673,88 @@ def score_draft_script(script_text, brief, duration):
     return score(script_text, brief, duration)
 
 
+def generate_viral_script_pipeline(request,complete,save,progress,save_draft=None):
+    """Linear actor -> mechanical critic -> editor. Never regenerate or re-grade.
+
+    Deterministic checks prevent unsafe final/alternate text from being exported;
+    they do not create a quality score or cause another model call.
+    """
+    from studio_script_writer import (validate_product_identity,compact_brief,system_prompt,
+        validate_final_script,final_script_issues,reference_cards,final_script_guidance,creator_closing_issues)
+    from studio_persona_lookup import retrieve_personas
+    from studio_evaluation import critique_algorithmic_draft,sterile_cleanup_sequence
+    from studio_editor import edit_script_and_hooks,compose_script
+    brief=request['brief']
+    validate_product_identity(brief)
+    context=compact_brief(brief)
+    # Retrieve only matching creator voices rather than inserting the whole desk.
+    available=reference_cards(brief)
+    priority={'creator-emotion','creator-share','creator-brand-bridge','creator-payoff'}
+    cards=([c for c in available if c['id'] in priority]+[c for c in available if c['id'] not in priority])[:6]
+    context.update(persona_references=retrieve_personas(brief),creator_direction=final_script_guidance(brief),creator_references=cards)
+    for key in ('selected_hook','revision_notes','previous_script'):
+        if request.get(key):context[key]=request[key]
+    master=system_prompt(brief)
+    prompt=('Write one algorithmic draft.' if getattr(complete,'system_prompt',None)==master else master)
+    prompt+='\nBRIEF: '+json.dumps(context,ensure_ascii=False)
+    candidate=None;critique=None;body='';hooks=[];issues=[];stages=[];stage_error=None
+    try:
+        progress(.08,'Actor: drafting one script')
+        began=time.monotonic()
+        draft_tokens=12000 if brief['content_duration']=='long' else 2500
+        raw=complete(prompt,draft_tokens,'Draft 1')
+        try:candidate=validate_final_script(raw)
+        except ValueError:
+            reject=getattr(complete,'reject',None)
+            if callable(reject):reject(prompt,draft_tokens,'Draft 1')
+            raise
+        stages.append(dict(stage='actor',elapsed_seconds=round(time.monotonic()-began,3)))
+        if save_draft:save_draft(candidate)
+        progress(.36,'Critic: checking four algorithmic pillars')
+        began=time.monotonic()
+        critique=critique_algorithmic_draft(candidate['final_script'],brief,complete)
+        stages.append(dict(stage='critic',elapsed_seconds=round(time.monotonic()-began,3)))
+        progress(.62,'Editor: applying critique and creating three A/B hooks')
+        began=time.monotonic()
+        body,hooks=edit_script_and_hooks(candidate['final_script'],critique,brief,complete,request.get('revision_notes',''))
+        stages.append(dict(stage='editor',elapsed_seconds=round(time.monotonic()-began,3)))
+        for hook in hooks:
+            variant=compose_script(hook['text'],body)
+            flags=final_script_issues({'final_script':variant},brief)
+            flags.extend(creator_closing_issues(variant,brief))
+            if sterile_cleanup_sequence(variant):flags.append('Weave cleanup into conversational speech instead of bare commands.')
+            hook['issues']=list(dict.fromkeys(flags))
+            hook['validated']=not flags
+            issues.extend(hook['label']+': '+flag for flag in flags)
+        if issues:
+            reject_last=getattr(complete,'reject_last',None)
+            if callable(reject_last):reject_last('Editor and A/B hooks')
+        candidate={'final_script':compose_script(hooks[0]['text'],body)}
+        if save_draft:save_draft(candidate)
+    except (ValueError,RuntimeError) as exc:
+        stage_error=exc
+        issues.append('Actor-critic stage unavailable: '+str(exc)[:500])
+    if candidate is None:
+        raise ValueError('Actor produced no usable script. No completed draft is available. '+str(stage_error)[:500]) from stage_error
+    approved=not issues and len(hooks)==3
+    assessment={'score':None,'critique':'One draft, one mechanical critique and one editor pass completed.' if approved else '; '.join(issues),
+        'criteria':[],'blockers':list(dict.fromkeys(issues)),'unsupported_claims':[],
+        'method':'Single-pass actor-critic editing plus deterministic safety checks; no predicted virality or final model grade.'}
+    model=getattr(complete,'model','selected writer')
+    if not isinstance(model,str):model='selected writer'
+    result={'pipeline_version':'actor-critic-v1','pipeline':{'kind':'actor_critic','draft_model':model,'analysis_model':model,
+                'editor_model':model,'stages':stages,'model_calls_completed':len(stages)},
+        'final_script':candidate['final_script'],'script_body':body,'ab_hooks':hooks,'selected_hook_kind':'problem',
+        'mechanical_critique':critique,'best':{'script':candidate,'assessment':assessment},'brief':brief,
+        'evaluation':None,'approved':approved,'target_met':approved,'quality_status':'ready' if approved else 'needs_review',
+        'stop_reason':'single_pass_complete' if approved else 'deterministic_checks_failed','history':[],'gate_history':[],
+        'reference_ids':[c['id'] for c in cards],
+        'revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
+    save(result)
+    progress(1,'Script and three hooks ready' if approved else 'Draft retained; review the flagged issues')
+    return result
+
+
 def extract_audit_frame(video, timestamp, destination):
     import imageio_ffmpeg
     destination = Path(destination)
@@ -687,7 +769,7 @@ def extract_audit_frame(video, timestamp, destination):
     return destination
 
 
-def run_cognitive_audit(video, output, visual_frames, progress, brief=None):
+def _run_observation_cognitive_audit(video, output, visual_frames, progress, brief=None):
     """One audio/simulation pass; below 70, exactly one independently checked rewrite."""
     import imageio_ffmpeg
     from studio_av_signals import transcribe_pacing, corrected_transcript_pacing
@@ -802,4 +884,91 @@ def run_cognitive_audit(video, output, visual_frames, progress, brief=None):
         audit['pdf_error'] = 'Audit PDF unavailable: ' + type(exc).__name__
     result['audit'] = audit
     _write_json(output / 'cognitive_audit.json', result)
+    return result
+
+
+def run_cognitive_audit(video,output,visual_frames,progress,brief=None):
+    """Unified pixel/transcript/WPM simulation after parallel media extraction."""
+    if visual_frames and not any(frame.get('path') for frame in visual_frames):
+        # Previously saved observation-only evidence remains reviewable.
+        return _run_observation_cognitive_audit(video,output,visual_frames,progress,brief)
+    import asyncio
+    import imageio_ffmpeg
+    from studio_av_signals import extract_media_parallel
+    from studio_virality import simulate_cognitive_response,DEFAULT_COGNITIVE_MODEL
+    from studio_decision_pdf import generate_audit_pdf
+    output=Path(output)
+    reader=imageio_ffmpeg.read_frames(str(video))
+    try:info=next(reader)
+    finally:reader.close()
+    duration=info.get('duration',0)
+    if not 0<duration<=900:raise ValueError('Cognitive review supports clips up to 15 minutes.')
+    try:
+        corrected=json.loads((output/'review_input.json').read_text(encoding='utf-8')).get('transcript',{})
+    except (OSError,ValueError,AttributeError):corrected={}
+    progress(15,'Extracting video frames and Whisper speech evidence in parallel')
+    media=asyncio.run(extract_media_parallel(video,output,duration,(brief or {}).get('language','auto'),corrected))
+    pacing=media['pacing']
+    _write_json(output/'transcript.json',pacing)
+    (output/'transcript.txt').write_text(pacing['text'],encoding='utf-8')
+    if not media['frames']:raise ValueError('No actual visual frames were extracted; no cognitive score assigned.')
+    progress(45,'Nemotron is reviewing pixels, transcript, word timings and WPM')
+    cognitive=simulate_cognitive_response(media['frames'],pacing['text'],pacing,brief,
+        progress=lambda stage:progress(45,'Cognitive simulation: '+stage))
+    result={'cognitive':cognitive,'pacing':pacing,'audit':{'triggered':False},
+            'visual_frames':cognitive.get('visual_observations',[]),
+            'extraction_seconds':media['extraction_seconds'],'evidence_warnings':media['warnings']}
+    _write_json(output/'cognitive_audit.json',result)
+    if cognitive['attention_retention_score']>=70:return result
+    progress(72,'Attention below 70: actor-critic revision and three-page PDF audit')
+    from studio_script_writer import brief_values
+    from studio_script_team import chat_json
+    from studio_script_nvidia import nvidia_token
+    from studio_evaluation import CRITIC_SYSTEM
+    from studio_editor import EDITOR_SYSTEM
+    context=dict(brief or {})
+    context.setdefault('topic','Creator video revision')
+    context.setdefault('facts','No verified product efficacy or experience supplied. Describe only the supplied evidence.')
+    context.update(content_duration='short' if duration<=40 else 'mid' if duration<=90 else 'long',writer_backend='fast')
+    audit={'triggered':True,'rewrite_attempts':1,'rewrite_approved':False,'final_script':''}
+    result['audit']=audit
+    _write_json(output/'cognitive_audit.json',result)
+    try:
+        from studio_script_writer import system_prompt
+        context=brief_values(context)
+        if (brief or {}).get('brand_context'):context['brand_context']=brief['brand_context']
+        request={'brief':context,'revision_notes':cognitive['psychological_critique'],
+                 'previous_script':{'final_script':pacing['text']}}
+        def complete(prompt,tokens,label):
+            from studio_script_team import draft_reasoning_effort
+            system=CRITIC_SYSTEM if label.startswith('Internal critique') else EDITOR_SYSTEM if label.startswith('Editor') else system_prompt(context)
+            def preview(content):pass
+            preview.status=lambda message:progress(80,label+': '+message)
+            return chat_json(nvidia_token('COGNITIVE_API_KEY') or nvidia_token('GEMMA_API_KEY') or nvidia_token(),DEFAULT_COGNITIVE_MODEL,
+                             system,prompt,tokens,0 if label.startswith('Internal critique') else .7,preview,
+                             reasoning_effort=draft_reasoning_effort(tokens,label))[0]
+        complete.model=DEFAULT_COGNITIVE_MODEL
+        complete.stage_systems=True
+        revision=generate_viral_script_pipeline(request,complete,lambda value:_write_json(output/'audit_script_result.json',value),lambda *args:None)
+        audit.update(final_script=revision['final_script'],rewrite_approved=revision['approved'],
+                     blockers=revision['best']['assessment']['blockers'],ab_hooks=revision['ab_hooks'],
+                     pipeline=revision['pipeline'],mechanical_critique=revision['mechanical_critique'])
+    except (ValueError,RuntimeError) as exc:
+        audit['rewrite_error']='Actor-critic revision unavailable: '+str(exc)[:400]
+    screenshots=[]
+    for index,failure in enumerate(cognitive['failure_timestamps']):
+        try:
+            path=extract_audit_frame(video,failure['timestamp'],output/'frames'/f'frame_{index}.jpg')
+            screenshots.append({'path':str(path),'caption':f"{failure['timestamp']:.2f}s: {failure['reason']}"})
+        except (OSError,ValueError,subprocess.SubprocessError):
+            audit.setdefault('warnings',[]).append('A flagged frame could not be extracted.')
+    try:
+        critique=cognitive['psychological_critique']+'\n\nRevision: '+('Safety checks passed.' if audit['rewrite_approved'] else 'Needs review.')
+        if audit.get('blockers'):critique+='\nRevision checks: '+'; '.join(audit['blockers'])[:1000]
+        if audit.get('rewrite_error'):critique+=' '+audit['rewrite_error']
+        generate_audit_pdf(pacing['text'],audit['final_script'],critique,screenshots,output/'audit.pdf')
+        audit['pdf_file']='audit.pdf'
+    except Exception as exc:
+        audit['pdf_error']='Audit PDF unavailable: '+type(exc).__name__
+    _write_json(output/'cognitive_audit.json',result)
     return result

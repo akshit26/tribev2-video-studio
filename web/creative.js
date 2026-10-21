@@ -9,8 +9,10 @@ window.renderCreative = function(report,id) {
     const add=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;panel.append(node);};
     add('h2',report.dashboard.status+' - creative readiness');
     add('p','Reviewed by '+report.model);
-    add('h3','Hook: '+report.result.hook_score+'/100 | Pacing: '+report.result.pacing_score+'/100 | Overall: '+report.result.overall_probability+'/100');
-    add('p',report.result.timestamped_revision_advice);
+    if(typeof report.result?.hook_score==='number'){
+      add('h3','Hook: '+report.result.hook_score+'/100 | Pacing: '+report.result.pacing_score+'/100 | Overall: '+report.result.overall_probability+'/100');
+      add('p',report.result.timestamped_revision_advice);
+    }
     add('p',report.dashboard.policy);
     if(report.cognitive){
       const refine=document.createElement('a');refine.textContent='Write a new script from this review';refine.href='/writer?video='+encodeURIComponent(id);refine.className='button';panel.append(refine);
@@ -34,7 +36,7 @@ window.renderCreative = function(report,id) {
         add('p',report.pacing.note||'Whisper transcript and pacing are available; cognitive simulation is unavailable.');
         for(const gap of report.pacing.dead_air||[])add('p','Speech-free gap: '+gap.start.toFixed(1)+'–'+gap.end.toFixed(1)+'s');
         add('p','Cognitive simulation is unavailable. Visual scores and audio measurements remain separate.');
-      }else add('p','Visual assessment only; cognitive/audio evidence is unavailable. Scores are uncalibrated editorial estimates.');
+      }else add('p','Cognitive/audio evidence is unavailable. No unified score was assigned.');
     }
     const video=document.createElement('video');video.controls=true;video.preload='metadata';video.style.width='100%';video.src='/api/jobs/'+encodeURIComponent(id)+'/video';panel.append(video);
     const download=document.createElement('a');download.textContent='Download review JSON';download.href='/api/jobs/'+encodeURIComponent(id)+'/files/report.json';panel.append(download);

@@ -11,14 +11,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 TARGET = 80
 MAX_ROUNDS = 5
-WRITER_VERSION = "writer-v30-visceral-hook-visual-beats"
+WRITER_VERSION = "writer-v31-linear-actor-critic"
 VISUAL_BEAT_RULES = (
     'Include at least three brief, nonempty [B-ROLL: ...] directions inline in final_script, in narrative order. '
     'Frame 1 at the opening: show the specific problem or gross agitation. '
     'Frame 2 as the product enters: demonstrate its placement/fit using only verified product facts. '
     'Frame 3 at the payoff: show the clean result or manual removal action supported by the brief. '
     'Use one creator and simple demonstrations; do not invent results, universal fit, usage directions or touch-free cleanup. '
-    'SECTION markers do not count as B-ROLL cues. The directions are not spoken and do not count toward spoken-word limits. ')
+    'Add a [B-ROLL: ...] or [TEXT ON SCREEN: ...] cue every 2-3 spoken sentences, including an opening problem cue. '
+    'Use B-ROLL for the three physical beats; TEXT ON SCREEN may provide extra pacing cues. '
+    'SECTION markers do not count as visual cues. Directions are not spoken and do not count toward spoken-word limits. ')
 SYSTEM = ("Write like a creator sending one friend a voice note: specific, conversational and easy to say aloud. "
     "Develop one audience tension into an observation, comic reversal, useful discovery or story; pay off the opening before the CTA. "
     "Connect one relevant verified product fact to that idea. Do not recite benefits, use generic ad slogans or invent a testimonial. "
@@ -27,7 +29,8 @@ SYSTEM = ("Write like a creator sending one friend a voice note: specific, conve
     "Weave verified demo and cleanup actions into casual creator speech, not a sterile verbatim product manual or list of commands. "
     "Use connected situational phrasing such as When you are done, ... give it a rinse, and you are good, rather than a clipped Lift it, rinse it, reuse it sequence. "
     "Ban abrupt robotic closings such as Buy one. or Purchase today. End with one natural creator directive connected to the audience's situation. "
-    "For short/mid content, the hook is one punchy sentence under 10 words; introduce the product in the next sentence, not a second extended metaphor. "
+    "For short/mid content, the hook is one high-arousal sentence strictly under 12 words; introduce the product in the next sentence, not a second extended metaphor. "
+    "Frame the product positively using verified facts. Never use anti-selling language such as do not buy this, waste of money or skip this product. "
     "Ban bland abstract declarations such as X is the worst or Drain clogs are annoying. Target a specific physical reaction, embarrassing everyday scenario or visible nuisance. "
     "For example, If drain hair makes you gag, watch this. Adapt the tension to the product; do not reuse a stock hook or invent personal experience. "
     + VISUAL_BEAT_RULES +
@@ -35,8 +38,8 @@ SYSTEM = ("Write like a creator sending one friend a voice note: specific, conve
     "Follow the requested language, persona, format and duration. Return only {\"final_script\":\"complete continuous script with inline B-ROLL cues\"}. "
     "Develop one strong premise and check it once; do not enumerate alternative scripts or restate these instructions.")
 FORMATS = {
-    'short': (35,60,30,"Write a 35-60 word script. Start with one visceral pattern-interrupt sentence under 10 words. Do NOT ask a question. Introduce the product in sentence two and deliver one narrative beat or demo. Keep the hook/metaphor to at most 40% of the spoken words; give the factual demo conversational breathing room. Close with one casual, situation-specific purchase directive, never Buy one. or Purchase today."),
-    'mid': (140,170,60,"Write a 140-170 word script. Structure: 5s Hook, 45s Body, 10s CTA. Open with one punchy sentence under 10 words and introduce the product in sentence two. Keep hook/metaphor to at most 40% of spoken words. Weave verified actions into casual speech rather than a manual. End with one natural creator directive. Place at least three inline B-ROLL cues at the problem, product placement and clean payoff beats. Ensure every sentence introduces new information."),
+    'short': (35,60,30,"Write a 35-60 word script. Start with one high-arousal pattern-interrupt sentence strictly under 12 words. Do NOT ask a question. Introduce the product in sentence two and deliver one narrative beat or demo. Keep the hook/metaphor to at most 40% of the spoken words; give the factual demo conversational breathing room. Close with one casual, situation-specific purchase directive, never Buy one. or Purchase today."),
+    'mid': (140,170,60,"Write a 140-170 word script. Structure: 5s Hook, 45s Body, 10s CTA. Open with one high-arousal sentence strictly under 12 words and introduce the product in sentence two. Keep hook/metaphor to at most 40% of spoken words. Weave verified actions into casual speech rather than a manual. End with one natural creator directive. Place inline B-ROLL or TEXT ON SCREEN cues every 2-3 sentences, retaining the three physical B-ROLL beats. Ensure every sentence introduces new information."),
     'long': (1500,1800,600,"Write a 1,500-1,800 word script. Break the body into 3 to 5 clear sections. Do not start with a greeting; state the premise immediately. Use open loops at the end of each section to tease the next part. Place the CTA near the end, asking for only ONE action.")
 }
 
@@ -228,7 +231,9 @@ def compact_brief(brief):
     facts = " ".join(result.get("facts", "").split())
     documents = result.get("brand_context", {}).get("documents", {})
     for key in list(documents):
-        if " ".join(documents[key].split()) in facts:
+        value=documents[key]
+        document_text=value if isinstance(value,str) else value.get('text','') if isinstance(value,dict) else ''
+        if isinstance(document_text,str) and document_text.strip() and " ".join(document_text.split()) in facts:
             del documents[key]
     if "brand_context" in result and not documents:
         result["brand_context"] = {"name": result["brand_context"].get("name", "")}
@@ -434,7 +439,7 @@ def spoken_word_count(content):
 def validate_final_script(raw):
     if not isinstance(raw,dict) or set(raw)!={'final_script'}:
         raise ValueError('Return only {"final_script":"the entire script"}. No scenes, titles or timestamps.')
-    return {'final_script':' '.join(text(raw.get('final_script'),30000).split())}
+    return {'final_script':'\n'.join(' '.join(line.split()) for line in text(raw.get('final_script'),30000).splitlines() if line.strip())}
 
 
 def spoken_timing(script, brief):
@@ -478,6 +483,7 @@ def claim_issues(content, brief):
         r"\bmy (?:hair|skin|scalp)\b.{0,40}\b(?:smooth|clear|soft|better|worse|dry|itchy|flak(?:e|ing))\b.{0,15}\b(?:now|after|since)\b|"
         r"\bmy (?:hair|skin|scalp)\b.{0,20}\bnow\b.{0,25}\b(?:smooth|clear|soft|better|worse|dry|itchy|flak(?:e|ing))\b",content,re.I)
     personal = personal or re.search(r"\bI (?:use|wear|apply)\b|\bI put (?:a|an|the|this|my)\b",content,re.I)
+    personal = personal or re.search(r"\bI\s+(?:never\s+)?(?:expected|thought|knew)\b.{0,90}\b(?:save|saved|help|helped|fix|fixed|change|changed)\s+me\b",content,re.I)
     if personal and not experience:
         issues.append("Invented personal usage or experience: no creator experience was supplied.")
     local_personal = re.search(r"मैंने.{0,30}(?:इस्तेमाल|लगाया|आज़माया|खरीदा)|\bmaine\b.{0,35}\b(?:use kiya|lagaya|try kiya|kharida)\b|\bmeri (?:skin|hair)\b.{0,30}\b(?:ab|pehle se)\b",content,re.I)
@@ -502,6 +508,11 @@ def claim_issues(content, brief):
         if collection_kind(claim) not in supported_universals:
             issues.append('Unsupported universal collection or removal promise: '+claim.group(0)+'. Use the supplied qualified capability without all/every guarantees.')
     if hair_catcher_manual_cleanup(brief):
+        if re.search(r'\b(?:takes?|in|within|under)\s+(?:(?:only|just|a|few|\d+)\s+)*(?:seconds?|minutes?)\b',content,re.I) and not re.search(r'\b(?:seconds?|minutes?)\b',facts,re.I):
+            issues.append('Unsupported cleaning-time promise. No seconds/minutes performance was supplied.')
+        clear_drain=r'\b(?:clear|clean|unclogged)\s+(?:shower\s+)?drain\b|\bdrain\s+(?:looks?|stays?|remains?|is)\s+(?:clear|clean|unclogged)\b'
+        if re.search(clear_drain,content,re.I) and not re.search(r'\b(?:clear|unclogged|clears|unclogs)\b',facts,re.I):
+            issues.append('Unsupported clear-drain outcome. Show the collected hair being removed from the catcher instead.')
         cleanup_sequence = re.search(r'\b(?:lift|remove|clean|empty)\b.{0,100}\brins(?:e|ing)\b|\brinse\b.{0,40}\b(?:reuse|use again)\b', content, re.I)
         removal_pattern = r'\b(?:remove|pull|pick|take|peel|clear|discard|bin|toss|dump|tip|empty|scrape)\b.{0,25}\bhair\b(?!\s*(?:catcher|trap|strainer))|\b(?:empty|dump|clear|tip)\s+(?:out\s+)?(?:it|them|the\s+(?:insert|catcher|trap|contents|clogs?))\b|\b(?:lift|peel)\s+(?:the\s+)?hair\s+(?:off|out)\b'
         hair_removed = False
@@ -1088,7 +1099,7 @@ def final_script_guidance(brief):
     direction = guidance(brief)
     direction += VISUAL_BEAT_RULES
     if brief.get('content_duration') in {'short','mid'}:
-        direction += ('One hook sentence under 10 words, then the product. No second sentence stretching the metaphor. '
+        direction += ('One high-arousal hook sentence strictly under 12 words, then the product. No second sentence stretching the metaphor. '
             'Keep hook/metaphor within 40% of spoken words. Speak the supplied demo/cleanup casually with natural connectors, '
             'not a sterile manual. End with a natural creator closing tied to this situation, not Buy one. or Purchase today. ')
     if brief.get('production_style', 'solo_simple') == 'solo_simple':
@@ -1146,12 +1157,22 @@ def final_script_issues(candidate, brief):
         opening = re.split(r'[.!?\u0964\uff01\uff1f\n]', spoken, maxsplit=1)[0]
         if re.search(r'\b(?:is|are|feels?)\s+(?:(?:the|just|so|really|very)\s+)*(?:worst|annoying)\b', opening, re.I):
             issues.append('Replace the bland hook with a specific physical reaction, embarrassing scenario or visible nuisance.')
-        if spoken_word_count(opening) >= 10:
-            issues.append('Opening hook must be one sentence under 10 words.')
-        if kind == 'short' and ('?' in spoken or '\uff1f' in spoken):
+        if spoken_word_count(opening) >= 12:
+            issues.append('Opening hook must be one sentence strictly under 12 words.')
+        if kind == 'short' and ('?' in spoken or '\uff1f' in spoken or re.match(r'\s*(?:who knew|what if|why (?:do|does|is|are|did)|how (?:do|does|can|did))\b',opening,re.I)):
             issues.append('Short scripts must not ask a question.')
     if kind == 'long' and not 3 <= len(re.findall(r'\[SECTION\s+\d+[^\]]*\]', candidate['final_script'], re.I)) <= 5:
         issues.append('Use 3-5 inline SECTION markers with open loops between sections.')
+    if re.search(r"\b(?:do not|don['\u2019]t|never)\s+buy\b|\b(?:skip|avoid)\s+(?:this|the)\s+product\b|\bwaste of money\b",spoken,re.I):
+        issues.append('Remove anti-selling language; frame the product positively using verified facts.')
+    sentence_count=0
+    for part in re.split(r'(\[[^\]]*\])',candidate['final_script']):
+        if re.match(r'\[(?:B-ROLL|TEXT ON SCREEN)\s*:',part,re.I):
+            if sentence_count>3:issues.append('Add a B-ROLL or TEXT ON SCREEN cue every 2-3 spoken sentences.')
+            sentence_count=0
+        elif not part.startswith('['):
+            sentence_count+=len(re.findall(r'[.!?\u0964\uff01\uff1f](?:\s|$)',part))
+    if sentence_count>3:issues.append('Add a B-ROLL or TEXT ON SCREEN cue every 2-3 spoken sentences.')
     # Visual directions must not invent claims; they also cannot hide an unsafe
     # spoken cleanup instruction by supplying its missing step elsewhere.
     issues.extend(claim_issues(spoken, brief))
@@ -1161,69 +1182,28 @@ def final_script_issues(candidate, brief):
     return list(dict.fromkeys(issues))
 
 
+def creator_closing_issues(script,brief):
+    """Cheap final CTA checks for the single-pass editor; no model grade."""
+    from studio_evaluation import blunt_closing_cta
+    spoken=re.sub(r'\[[^\]]*\]','',script)
+    sentences=[s.strip() for s in re.split(r'[.!?\u0964\uff01\uff1f\n]+',spoken) if s.strip()]
+    closing=sentences[-1] if sentences else ''
+    issues=[]
+    if blunt_closing_cta(script):issues.append('Use a natural creator CTA, not a blunt closing command.')
+    if not re.search(r'\b(?:buy|grab|get|keep|shop|order|purchase|check|tap|click|pick|try|visit|follow|save|share|subscribe|comment|link|lelo|kharido|kharid)\b|\u0916\u0930\u0940\u0926|\u0932\u0947\s*\u0932\u094b|\u0932\u093f\u0902\u0915|\u091a\u0947\u0915',closing,re.I):
+        issues.append('End with one clear, natural creator action.')
+    evidence=' '.join(str(brief.get(k,'')) for k in ('cta','creator_experience','creative_notes'))
+    if re.search(r'\blink\b|\bbio\b|https?://',closing,re.I) and not re.search(r'\blink\b|\bbio\b|https?://',evidence,re.I):
+        issues.append('No purchase link or bio destination was supplied; use a natural CTA without inventing one.')
+    return issues
+
+
 def write_final_script(request,complete,save,progress,save_draft=None):
-    brief=request['brief']
-    validate_product_identity(brief)
-    # Saved requests created before multi-format support remain readable/retryable.
-    if 'content_duration' not in brief:
+    """New jobs use exactly one draft, one critique and one editor pass."""
+    if not request['brief'].get('content_duration'):
         return _legacy_final_script(request,complete,save,progress,save_draft)
-    from studio_pipeline import score_draft_script
-    kind=brief['content_duration']
-    compact=compact_brief(brief)
-    context={k:compact[k] for k in ('topic','facts','audience','language','persona','creator_experience','creative_notes','creative_freedom','objective','cta','content_duration','content_mode','content_format','platform','product_name','pain_point','book_principle','source_review','brand_context','research_context','experiment_notes','production_style','niche') if compact.get(k) not in (None,'',[])}
-    context.update(persona_direction=persona_guidance(brief),creator_direction=final_script_guidance(brief),creator_references=reference_cards(brief),learned_mechanisms=brief.get('learned_mechanisms',[]))
-    if request.get('selected_hook') and not request.get('revision_notes'):
-        selected=request['selected_hook']
-        hook_issues=claim_issues(selected.get('spoken','')+' '+selected.get('payoff',''),brief)
-        context['selected_hook']=({'angle':selected.get('angle',''),'rewrite_reason':hook_issues,'direction':'Preserve the core idea but replace unsupported wording.'}
-            if hook_issues else {k:selected[k] for k in ('angle','spoken','payoff','concept') if selected.get(k)})
-    master=system_prompt(brief)
-    # API providers already install this exact master as a system message.
-    # Standalone/local completion functions still receive all constraints.
-    prompt=('Write the script using the supplied creator direction and duration rules.' if getattr(complete,'system_prompt',None)==master else master)+' BRIEF: '+json.dumps(context,ensure_ascii=False)
-    if request.get('previous_script'):
-        prompt+=' PREVIOUS SCRIPT: '+script_text(request['previous_script'])+' REQUESTED CHANGES: '+request.get('revision_notes','')
-    history=[];candidate=None;gate=None;issues=[];approved=False
-    for attempt in range(2):
-        progress(.08+.4*attempt,'Writing draft' if not attempt else 'Rewriting from gatekeeper feedback')
-        try:
-            candidate=validate_final_script(complete(prompt,12000 if kind=='long' else 2500,'Draft '+str(attempt+1)))
-        except (ValueError,RuntimeError) as exc:
-            if attempt and candidate is not None:
-                issues.append('Rewrite unavailable: '+str(exc)[:400]);approved=False
-                break
-            if isinstance(exc,RuntimeError) or attempt:raise
-            prompt+=' REWRITE: Previous output was invalid: '+str(exc)+'. Return exactly one final_script string.'
-            continue
-        if save_draft:save_draft(candidate)
-        issues=final_script_issues(candidate,brief)
-        gate=None
-        if issues:
-            history.append({'attempt':attempt+1,'evaluation':None,'blockers':issues.copy(),'scoring_skipped':'local_validation_failed'})
-            if not attempt:
-                prompt+=' REJECTED DRAFT: '+json.dumps(candidate,ensure_ascii=False)+' REWRITE FEEDBACK: '+'; '.join(issues)
-            continue
-        progress(.28+.4*attempt,'Scoring draft before approval')
-        try:
-            gate=score_draft_script(candidate['final_script'],brief,kind)
-        except (ValueError,RuntimeError) as exc:
-            issues.append('Scoring unavailable: '+str(exc)[:400]);gate=None
-            history.append({'attempt':attempt+1,'evaluation':None,'blockers':issues.copy()})
-            break
-        if not gate['has_cta']:issues.append('Add a direct CTA.')
-        if gate['invented_experience']:issues.append('Remove invented creator experience.')
-        if gate['overall_score']<80:issues.append('Editorial score is below 80.')
-        approved=not issues
-        history.append({'attempt':attempt+1,'evaluation':gate,'blockers':issues.copy()})
-        if approved:break
-        if not attempt:
-            prompt+=' REJECTED DRAFT: '+json.dumps(candidate,ensure_ascii=False)+' REWRITE FEEDBACK: '+gate['critique']+' '+ '; '.join(issues)
-    if candidate is None:raise ValueError('No valid single-block script was generated.')
-    critique=gate['critique'] if gate else ('Draft failed local validation before remote scoring. '+'; '.join(issues) if history and history[-1].get('scoring_skipped') else 'Scoring unavailable; no approval assigned.')
-    assessment={'score':gate['overall_score'] if gate else None,'critique':critique,'criteria':[],'blockers':issues,'unsupported_claims':[],'method':'Uncalibrated pre-publication text assessment, not predicted sales or virality.'}
-    result={'reference_ids':[c['id'] for c in reference_cards(brief)],'final_script':candidate['final_script'],'brief':brief,'best':{'script':candidate,'assessment':assessment},'evaluation':gate,'gate_history':history,'approved':approved,'history':[],'target_met':approved,'quality_status':'ready' if approved else 'needs_review','stop_reason':'gate_approved' if approved else 'gate_rejected','revision_notes':request.get('revision_notes',''),'parent_script_id':request.get('parent_script_id')}
-    save(result);progress(1,'Script approved' if approved else 'Not approved; review critique')
-    return result
+    from studio_pipeline import generate_viral_script_pipeline
+    return generate_viral_script_pipeline(request,complete,save,progress,save_draft)
 
 
 def run_writer(output,complete,progress):

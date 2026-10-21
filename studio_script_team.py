@@ -1,4 +1,4 @@
-"""GPT-OSS drafts with a separate NVIDIA scoring gate; with independent editorial scoring."""
+"""Reasoning-enabled NVIDIA transport and GPT-OSS actor-critic provider."""
 import json
 import sys
 from studio_script_nvidia import nvidia_token as credential
@@ -7,9 +7,9 @@ from studio_script_hf import HostedWriterError
 MODEL='openai/gpt-oss-20b'
 GEMMA='google/gemma-4-31b-it'
 NAME='GPT-OSS single-block writer'
-PROFILE='gptoss-gemma-v10-balanced-drafts-600s'
+PROFILE='gptoss-gemma-v11-actor-critic-180s'
 ENDPOINT='https://integrate.api.nvidia.com/v1/chat/completions'
-REQUEST_TIMEOUT_SECONDS=600
+REQUEST_TIMEOUT_SECONDS=180
 HEARTBEAT_SECONDS=15
 
 
@@ -29,7 +29,7 @@ def stage_model(label):
 
 def draft_reasoning_effort(tokens,label):
     """Keep reasoning on; reserve full effort for long drafts and reviewers."""
-    if not label.startswith(('Draft','Hook options')) or tokens>2500:
+    if not label.startswith(('Draft','Hook options','Internal critique','Editor')) or tokens>6000:
         return 'high'
     effort=credential('SCRIPT_DRAFT_REASONING_EFFORT') or 'medium'
     if effort not in {'medium','high'}:
@@ -45,7 +45,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None,*,re
     body={'model':model,'messages':[{'role':'system','content':system},{'role':'user','content':prompt}],
         'temperature':max(0,min(1,temperature)),'top_p':.95 if model.startswith('meta/muse') else 1,
         'max_tokens':8192 if model.startswith('meta/muse') else min(65536,max(32768,max_tokens+16384)),
-        'stream':model in {MODEL,'nvidia/nemotron-3.5-super-vl-120b-a12b','nvidia/nemotron-3-ultra-550b-a55b'}}
+        'stream':model==MODEL or 'nemotron' in model.lower() or 'llama' in model.lower()}
     if reasoning_effort not in {'medium','high'}:raise ValueError('Use medium or high reasoning effort.')
     if model==MODEL:body['reasoning_effort']=reasoning_effort
     if model=='nvidia/nemotron-3-ultra-550b-a55b':
@@ -62,7 +62,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None,*,re
     async def receive():
         async with AsyncOpenAI(base_url=ENDPOINT.rsplit('/',2)[0],api_key=token,
                 timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS,connect=REQUEST_TIMEOUT_SECONDS,write=REQUEST_TIMEOUT_SECONDS,pool=REQUEST_TIMEOUT_SECONDS),max_retries=0) as client:
-            async with client.chat.completions.with_streaming_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'300'}) as raw:
+            async with client.chat.completions.with_streaming_response.create(**body,extra_headers={'NVCF-POLL-SECONDS':'180'}) as raw:
                 if raw.status_code==202:
                     from studio_gemma_video import request_id,poll_result,ViralityAPIError
                     try:
@@ -149,7 +149,7 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None,*,re
             except APITimeoutError:
                 raise
             except APIStatusError as exc:
-                if attempt or exc.status_code not in {500,502,503,504}:
+                if attempt or exc.status_code not in {500,502}:
                     raise
                 status(f'NVIDIA HTTP {exc.status_code}; retrying once with a fresh connection')
                 await asyncio.sleep(1)
@@ -157,18 +157,18 @@ def chat_json(token,model,system,prompt,max_tokens,temperature,preview=None,*,re
                 if attempt:
                     raise
                 # Transient TLS/socket disconnects can recover with a fresh client.
-                # Share the same retry allowance and original 600-second deadline.
+                # Share the same retry allowance and original request deadline.
                 status('NVIDIA connection interrupted; retrying once with a fresh connection')
                 await asyncio.sleep(1)
 
     async def bounded():return await asyncio.wait_for(resilient_receive(),timeout=REQUEST_TIMEOUT_SECONDS)
     try:return asyncio.run(bounded())
     except (TimeoutError,APITimeoutError):
-        raise HostedWriterError(f'{model}: NVIDIA did not return output within 600 seconds. Saved drafts are retained; retry later or select another engine.') from None
+        raise HostedWriterError(f'{model}: NVIDIA did not return output within {REQUEST_TIMEOUT_SECONDS} seconds. Saved drafts are retained; retry later or select another engine.') from None
     except APIStatusError as exc:
         hint={401:'API key rejected',403:'model access denied',404:'model unavailable',410:'model retired',429:'rate limit or quota reached',
               500:'NVIDIA service failed after one retry',502:'NVIDIA gateway failed after one retry',
-              503:'NVIDIA service unavailable after one retry',504:'NVIDIA gateway timed out after one retry'}.get(exc.status_code,'provider request failed')
+              503:'NVIDIA service unavailable',504:'NVIDIA gateway timed out'}.get(exc.status_code,'provider request failed')
         raise HostedWriterError(f'{model}: {hint} (HTTP {exc.status_code}). Saved drafts are retained.') from None
     except APIConnectionError:
         raise HostedWriterError(f'{model}: could not connect to NVIDIA. Saved drafts are retained.') from None
@@ -216,7 +216,7 @@ def run_team_writer(output,request,progress):
     if path.exists():
         data=json.loads(path.read_text(encoding='utf-8'))
         from studio_evaluation import draft_scoring_model
-        data['pipeline']={'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'API pre-scoring gate; one rewrite maximum.'}
+        data.setdefault('pipeline',{'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'Archived scoring pipeline.'})
         try:
             from studio_script_performance import validate_dataset,predict
             dataset=validate_dataset(json.loads((output.parent/'performance_data.json').read_text(encoding='utf-8')))

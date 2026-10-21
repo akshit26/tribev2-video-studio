@@ -65,22 +65,12 @@ class CreatorCadenceTests(unittest.TestCase):
         self.assertIn('more than 40%',api.call_args.args[2])
         self.assertIn(METAPHOR_CRITIQUE,api.call_args.args[2])
 
-    def test_blunt_cta_triggers_exactly_one_rewrite_to_natural_close(self):
-        brief=self.brief()
-        blunt=SCRIPT.rsplit('Grab one',1)[0]+'Buy one.'
-        complete=Mock(side_effect=[{'final_script':blunt},{'final_script':SCRIPT}])
-        with patch('studio_pipeline.score_draft_script',side_effect=[apply_cta_quality_rule(GOOD,blunt),GOOD]) as score:
-            result=writer.write_final_script({'brief':brief},complete,lambda _:None,lambda *args:None)
-        self.assertTrue(result['approved'])
-        self.assertEqual(complete.call_count,2)
-        self.assertEqual(score.call_count,2)
-        self.assertIn(ROBOTIC_CTA_CRITIQUE,complete.call_args.args[0])
 
     def test_hook_limit_and_conversational_cleanup_preserve_safety(self):
         brief=self.brief()
         self.assertEqual(writer.final_script_issues({'final_script':SCRIPT},brief),[])
-        too_long=SCRIPT.replace('If drain hair makes you gag, watch this.', 'This wet drain hair is really just an absolute hard no.')
-        self.assertIn('under 10 words',' '.join(writer.final_script_issues({'final_script':too_long},brief)))
+        too_long=SCRIPT.replace('If drain hair makes you gag, watch this.', 'This wet drain hair is really just an absolutely unacceptable hard no.')
+        self.assertIn('under 12 words',' '.join(writer.final_script_issues({'final_script':too_long},brief)))
         for bad in (SCRIPT.replace('peel the hair off, ',''),
                     SCRIPT.replace('catches loose hair','catches every strand'),
                     SCRIPT.replace('This silicone catcher sits','I use a silicone catcher that sits')):
@@ -108,16 +98,6 @@ class CreatorCadenceTests(unittest.TestCase):
                 self.assertIn('at least three',' '.join(issues))
         self.assertEqual(writer.final_script_issues({'final_script':SCRIPT},self.brief()),[])
 
-    def test_missing_visuals_get_one_rewrite_without_remote_grading(self):
-        import re
-        plain=re.sub(r'\[[^\]]*\]','',SCRIPT)
-        complete=Mock(side_effect=[{'final_script':plain},{'final_script':SCRIPT}])
-        with patch('studio_pipeline.score_draft_script',return_value=GOOD) as score:
-            result=writer.write_final_script({'brief':self.brief()},complete,lambda _:None,lambda *args:None)
-        self.assertTrue(result['approved'])
-        self.assertEqual(complete.call_count,2)
-        self.assertEqual(score.call_count,1)
-        self.assertIn('at least three',complete.call_args.args[0])
 
     def test_bland_problem_declarations_are_rejected_before_scoring(self):
         for hook in ('Drain hair is the worst.', 'Drain clogs are annoying.'):

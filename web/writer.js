@@ -11,7 +11,7 @@ async function api(url, options={}) {
   return data;
 }
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
-function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value;}
+function lock(value){busy=value;for(const b of document.querySelectorAll('#predictPerformance,#briefForm button,#hooks button,#abHooks button,#sceneEditor button,#saveDraft,#reviseDraft,#retryJob,#applyChanges,#openOriginal,#revisionNotes,#revisionScope,#sceneEditor textarea'))b.disabled=value||b.dataset.validated==='false';}
 function getBrief(){const b=Object.fromEntries(new FormData($('briefForm')));b.duration=({short:30,mid:60,long:600})[b.content_duration]||30;b.hf_credits_allowed=$('hfCreditsAllowed').checked;b.research_id=$('useResearch').checked&&researchCurrent?.status==='completed'?researchCurrent.id:'';return b;}
 function setBrief(brief){for(const [key,value] of Object.entries({content_duration:brief.content_duration||(brief.duration===60?'mid':'short'),content_mode:'organic',content_format:'auto',production_style:'solo_simple',persona:'auto',creator_experience:'',niche:'auto',writer_backend:'local',local_model:'auto',hf_model:'deepseek-ai/DeepSeek-V4.1-Flash',hf_credits_allowed:false,...brief})){const field=$('briefForm').elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=value===true;else field.value=value;}}updateContentMode();updatePersona();updateEngine();$('useResearch').checked=false;if(brief.research_id)openResearch(brief.research_id,true);}
 function updateContentMode(){
@@ -95,6 +95,33 @@ function updateScriptTiming(script){
 }
 function scriptText(script){return typeof script.final_script==='string'?script.final_script:(script.scenes||[]).map(row=>row.spoken||'').join(' ');}
 function resizeScript(){const area=$('finalScript');area.style.height='auto';area.style.height=Math.max(220,area.scrollHeight)+'px';}
+function updateABSelection(){
+  const opening=$('finalScript').value.split('\n')[0].replace(/^\s*(?:\[[^\]]+\]\s*)+/,'').trim();
+  for(const button of $('abHooks').children)button.setAttribute('aria-pressed',String(button.dataset.hookText===opening));
+}
+function renderABHooks(result){
+  const panel=$('abHooksPanel'),buttons=$('abHooks');buttons.replaceChildren();
+  const hooks=result.ab_hooks||[];panel.hidden=hooks.length!==3;
+  for(const hook of hooks){
+    const button=make('button',hook.label+': '+hook.text);button.type='button';
+    button.dataset.hookKind=hook.kind;button.dataset.hookText=hook.text;button.dataset.validated=String(hook.validated!==false);
+    const opening=$('finalScript').value.split('\n')[0].replace(/^\s*(?:\[[^\]]+\]\s*)+/,'').trim();
+    button.setAttribute('aria-pressed',String(opening===hook.text));
+    button.disabled=hook.validated===false;
+    button.onclick=()=>{
+      if(busy)return;
+      const content=$('finalScript').value,split=content.indexOf('\n');
+      if(split<0){status('Keep the opening on its own first line before swapping hooks.',true);return;}
+      const prefix=content.slice(0,split).match(/^(\s*(?:\[[^\]]+\]\s*)+)/)?.[1]||'';
+      $('finalScript').value=prefix+hook.text+'\n'+content.slice(split+1);
+      dirty=true;
+      for(const node of buttons.children)node.setAttribute('aria-pressed',String(node===button));
+      showEditStatus('Hook selected. Your body and inline cues are unchanged. Save this variant to export it.');
+      updateScriptTiming(editedScript());resizeScript();
+    };
+    buttons.append(button);
+  }
+}
 function renderScript(script){
   editorBase={final_script:scriptText(script)};$('performanceResult').textContent='';
   const rejected=current?.result?.approved===false;
@@ -102,6 +129,7 @@ function renderScript(script){
   $('finalScript').setAttribute('aria-label',rejected?'Unapproved script draft':'Final script');
   $('revisionScope').replaceChildren(new Option('Whole script',''));
   updateScriptTiming(editorBase);resizeScript();
+  updateABSelection();
 }
 function editedScript(){return {final_script:$('finalScript').value};}
 function showEditStatus(message){
@@ -112,22 +140,32 @@ function showEditStatus(message){
     const critique=current.result.evaluation?.critique||current.result.best?.assessment?.critique;
     if(critique)$('score').append(make('p','Original feedback: '+critique));}
 }
-$('finalScript').addEventListener('input',()=>{dirty=true;$('cognitiveMetrics').hidden=true;$('auditDownload').hidden=true;showEditStatus('Unsaved changes. A fresh assessment is required.');updateScriptTiming(editedScript());resizeScript();});
+$('finalScript').addEventListener('input',()=>{dirty=true;$('cognitiveMetrics').hidden=true;$('auditDownload').hidden=true;showEditStatus('Unsaved changes. A fresh assessment is required.');updateScriptTiming(editedScript());resizeScript();updateABSelection();});
 window.addEventListener('resize',resizeScript);
 function renderResult(result){
   $('resultSection').hidden=false;$('score').hidden=false;
   $('revisionStatus').textContent=result.revision_notes?'Requested: '+result.revision_notes:'';const parent=current?.parent_script_id||result.parent_script_id;$('openOriginal').hidden=!parent;$('openOriginal').dataset.scriptId=parent||'';
-  $('pipelineStatus').textContent=result.pipeline?result.pipeline.draft_model+(result.pipeline.analysis_model?' drafts | '+result.pipeline.analysis_model+' reviews':' writes your script'):'';
+  $('pipelineStatus').textContent=result.pipeline?.kind==='actor_critic'?'Actor → mechanical critic → editor · '+result.pipeline.draft_model:result.pipeline?result.pipeline.draft_model+(result.pipeline.analysis_model?' drafts | '+result.pipeline.analysis_model+' reviews':' writes your script'):'';
   const cognitive=result.source_video_cognitive;const metrics=$('cognitiveMetrics');metrics.replaceChildren();metrics.hidden=!cognitive;
   if(cognitive){metrics.append(make('strong','Source video ? cognitive simulation'),make('p','Attention estimate: '+cognitive.attention_retention_score+'/100 | Emotion hypothesis: '+cognitive.emotional_arousal_state+' | WPM: '+(result.source_video_pacing?.wpm??'Unavailable')),make('p',cognitive.psychological_critique),make('p','These estimates describe the source video, not the newly written script.','muted small'));}
   $('auditDownload').hidden=!(result.audit?.pdf_file==='audit.pdf'&&result.source_video_job_id);
   if(!$('auditDownload').hidden)$('auditDownload').href='/api/jobs/'+encodeURIComponent(result.source_video_job_id)+'/files/audit.pdf';
   renderScript(result.best.script);
+  renderABHooks(result);
   const assessment=result.best.assessment;
   const line=make('div',undefined,'score-line');line.append(make('strong',typeof assessment.score==='number'?assessment.score+'/100':'Unscored','score-number'),make('p',result.target_met?'Editorial target reached. Review the wording and supplied proof before use.':'Best saved draft. Target not reached: '+result.stop_reason.replaceAll('_',' ')));
   if(assessment.score===null)line.replaceChildren(make('p',assessment.blockers?.length?'Draft saved. Revise the flagged issues before use.':'Script ready. Copy, edit or suggest changes below.'));
   if(result.evaluation){line.replaceChildren(make('strong',result.evaluation.overall_score+'/100','score-number'),make('p',result.approved?'Approved by pre-scoring gatekeeper':'Not approved - one rewrite limit reached'),make('p',result.evaluation.critique));}
   else if(result.approved===false){line.replaceChildren(make('p','Not approved - review the flagged issues'),make('p',assessment.critique||''));}
+  if(result.pipeline_version==='actor-critic-v1'){
+    line.replaceChildren(make('strong',result.approved?'Edited script ready':'Draft retained — review checks'),
+      make('p','One actor draft, one mechanical critique and one editor pass. No extra scoring or regeneration loop.'));
+    const critique=result.mechanical_critique;
+    if(critique&&Object.values(critique).some(value=>Array.isArray(value)&&value.length))line.append(make('p','Initial-draft critique applied by the editor:'));
+    if(critique)for(const key of ['hook_velocity','visual_pacing','no_fluff','direct_response_strength','safety_issues']){
+      for(const issue of critique[key]||[])line.append(make('p',key.replaceAll('_',' ')+': '+issue));
+    }
+  }
   const rejected=result.approved===false;
   $('sceneEditor').hidden=false;
   for(const id of ['saveDraft','reviseDraft','applyChanges'])$(id).disabled=false;

@@ -9,8 +9,8 @@ class TeamTransportTests(unittest.TestCase):
     def invoke(self, handler, model=team.MODEL, preview=None, effort='high'):
         real=openai.AsyncOpenAI
         def client(**kwargs):
-            self.assertEqual(kwargs['timeout'].read,600)
-            self.assertEqual(kwargs['timeout'].connect,600)
+            self.assertEqual(kwargs['timeout'].read,180)
+            self.assertEqual(kwargs['timeout'].connect,180)
             return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         with patch('openai.AsyncOpenAI',side_effect=client):
             return team.chat_json('test-key',model,'Return JSON','Test',1200,.7,preview,reasoning_effort=effort)
@@ -60,7 +60,7 @@ class TeamTransportTests(unittest.TestCase):
     def test_timeout_is_specific_and_not_retried(self):
         calls=[]
         def handler(request):calls.append(request);raise httpx.ReadTimeout('private endpoint detail')
-        with self.assertRaisesRegex(team.HostedWriterError,'within 600 seconds'):self.invoke(handler)
+        with self.assertRaisesRegex(team.HostedWriterError,'within 180 seconds'):self.invoke(handler)
         self.assertEqual(len(calls),1)
 
     def test_ultra_keeps_reasoning_enabled(self):
@@ -108,7 +108,7 @@ class TeamTransportTests(unittest.TestCase):
         seen=[]
         def handler(request):
             seen.append(request)
-            if len(seen)==1:return httpx.Response(503,json={})
+            if len(seen)==1:return httpx.Response(502,json={})
             raise httpx.ConnectError('Still unavailable')
         with self.assertRaisesRegex(team.HostedWriterError,'could not connect'):
             self.invoke(handler)
@@ -188,7 +188,7 @@ class TeamTransportTests(unittest.TestCase):
         identifier='42c8dc9c-eace-4d89-949f-c330a7d2d08b';calls=[]
         def handler(request):
             calls.append(request)
-            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'300')
+            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'180')
             return httpx.Response(202,json={'requestId':identifier})
         result={'id':'queued-result','object':'chat.completion','created':0,'model':team.MODEL,'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]}
         with patch('studio_gemma_video.poll_result',new_callable=AsyncMock,return_value=result) as poll:
@@ -198,6 +198,20 @@ class TeamTransportTests(unittest.TestCase):
     def test_queued_request_is_not_parsed_as_corrupt_json(self):
         def handler(request):return httpx.Response(202,json={'requestId':'test'})
         with self.assertRaisesRegex(team.HostedWriterError,'queued or incomplete'):self.invoke(handler)
+
+    def test_llama_and_nemotron_requests_stream(self):
+        def handler(request):
+            self.assertTrue(json.loads(request.content)['stream'])
+            return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':'{"ok":true}'},'finish_reason':'stop'}]})
+        for model in ('meta/llama-3.3-70b-instruct','nvidia/nemotron-3.5-super-vl-120b-a12b'):
+            self.assertEqual(self.invoke(handler,model=model)[0],{'ok':True})
+
+    def test_non_retryable_gateway_status_is_not_resubmitted(self):
+        for code in (401,403,429,503,504):
+            calls=[]
+            def handler(request):calls.append(request);return httpx.Response(code,json={})
+            with self.assertRaises(team.HostedWriterError):self.invoke(handler)
+            self.assertEqual(len(calls),1)
 
 class CompactHookTests(unittest.TestCase):
     def test_prompt_keeps_facts_language_and_does_not_replace_repairs(self):

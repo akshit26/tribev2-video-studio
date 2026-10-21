@@ -117,7 +117,14 @@ def reference_review(report):
         return {}
     from studio_gemma_video import validate_result
     try:
-        scores=validate_result(json.dumps(report.get('result')))
+        if report.get('cognitive'):
+            from studio_virality import validate_cognitive_response
+            cognitive=report['cognitive']
+            duration=report.get('video',{}).get('duration_seconds',report.get('pacing',{}).get('duration_seconds'))
+            fields={k:v for k,v in cognitive.items() if k not in {'model','interpretation'}}
+            score=validate_cognitive_response(fields,duration)['attention_retention_score']
+        else:
+            score=validate_result(json.dumps(report.get('result')))['overall_probability']
     except (ValueError,RuntimeError,TypeError):
         return {}
     pacing=report.get('pacing',{})
@@ -127,7 +134,8 @@ def reference_review(report):
     sources=[]
     if pacing.get('available') is True and isinstance(pacing.get('text'),str) and pacing['text'].strip():
         sources.append(dict(id='S1',kind='speech',start=0.,end=duration,text=pacing['text']))
-    for frame in report.get('visual_frames',[])[:8]:
+    frames=report.get('cognitive',{}).get('visual_observations',[]) or report.get('visual_frames',[])
+    for frame in frames[:8]:
         timestamp=frame.get('timestamp')
         observation=frame.get('observation')
         if (type(timestamp) in (int,float) and math.isfinite(timestamp) and 0<=timestamp<duration
@@ -135,7 +143,7 @@ def reference_review(report):
             sources.append(dict(id=f'V{len(sources)+1}',kind='visual',start=timestamp,
                 end=min(duration,timestamp+1),text='Visual-model observation (may be wrong): '+observation))
     return dict(available=bool(sources),sources=sources,context=report.get('context',{}),
-                estimate={'score':scores['overall_probability']},dimensions=[])
+                estimate={'score':score},dimensions=[])
 
 
 def snapshot(results, brand_id, exclude_job=None, exclude_fingerprint=None):
@@ -198,7 +206,7 @@ def save_feedback(results, brand_id, job_id, report, outcomes, purpose="candidat
     profile = read_brand(results, brand_id)
     row = dict(outcomes, job_id=job_id, purpose=purpose, video_hash=video_hash,
                base_score=report.get("review", {}).get("brand_review", {}).get("uncalibrated_overall",
-                   report.get("review", {}).get("estimate", {}).get("score",report.get('result',{}).get('overall_probability'))))
+                   report.get("review", {}).get("estimate", {}).get("score",report.get('cognitive',{}).get('attention_retention_score',report.get('result',{}).get('overall_probability')))))
     profile["feedback"] = [r for r in profile.get("feedback", []) if r["job_id"] != job_id] + [row]
     profile["feedback"] = profile["feedback"][-200:]
     for ref in profile.get("references", []):

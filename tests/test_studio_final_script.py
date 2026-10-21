@@ -4,7 +4,7 @@ from studio_script_writer import validate_final_script,write_final_script,run_wr
 TEXT='My notebook has one job. [Hold notebook] Keep the ideas I forget between breakfast and finding my keys. I do not need another app asking me to organise my entire personality. I need a blank page where a shopping list can sit next to a ridiculous business idea without either one sending me a notification. That is the whole system. Write it down and get on with the day.'
 class FinalScriptTests(unittest.TestCase):
     def test_single_field_schema_and_round_trip(self):
-        self.assertEqual(validate_final_script({'final_script':'One\n continuous block.'}),{'final_script':'One continuous block.'})
+        self.assertEqual(validate_final_script({'final_script':'One\n continuous block.'}),{'final_script':'One\ncontinuous block.'})
         for raw in ({'scenes':[]},{'final_script':'Hi','title':'Extra'},{'final_script':''}):
             with self.assertRaises(ValueError):validate_final_script(raw)
         self.assertEqual(validate_script({'final_script':TEXT},{}),{'final_script':TEXT})

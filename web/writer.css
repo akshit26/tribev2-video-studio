@@ -3,3 +3,4 @@
 #score{padding:16px;border-left:3px solid var(--accent,#a8d58b);margin:16px 0}#score p{white-space:pre-wrap;overflow-wrap:anywhere}#finalScript{box-sizing:border-box;line-height:1.65}#contentDuration{width:100%}
 
 .cognitive-metrics{padding:16px;margin:12px 0;border:1px solid var(--line,#46523d);border-radius:10px;overflow-wrap:anywhere}.cognitive-metrics p{margin:8px 0}
+#abHooks button{max-width:100%;text-align:left;overflow-wrap:anywhere}#abHooks button[aria-pressed="true"]{border-color:var(--accent);background:#263222}#abHooks button:disabled{cursor:not-allowed}

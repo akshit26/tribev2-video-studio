@@ -20,7 +20,7 @@ class GemmaVideoTests(unittest.TestCase):
             seen.append(json.loads(request.content))
             return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':json.dumps(RESULT)},'finish_reason':'stop'}]})
         def client(**kwargs):
-            self.assertEqual(kwargs['timeout'].read,600)
+            self.assertEqual(kwargs['timeout'].read,180)
             return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         with tempfile.TemporaryDirectory() as folder,patch('openai.AsyncOpenAI',side_effect=client),patch('studio_script_nvidia.nvidia_token',return_value='test-key'):
             path=Path(folder)/'input.mp4';path.write_bytes(MP4)
@@ -93,7 +93,7 @@ class NvidiaGatewayTests(unittest.TestCase):
         identifier='11111111-1111-4111-8111-111111111111'
         def handler(request):
             calls.append(request)
-            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'300')
+            self.assertEqual(request.headers['NVCF-POLL-SECONDS'],'180')
             return httpx.Response(202,headers={'nvcf-reqid':identifier},json={'requestId':identifier})
         def client(**kwargs):return real(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),**kwargs)
         async def poll(token,rid):

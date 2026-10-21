@@ -13,7 +13,7 @@ def generate_audit_pdf(old_script, new_script, critique, image_paths, output_pat
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, PageBreak, KeepInFrame, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, PageBreak, KeepInFrame, Spacer, Table, TableStyle
     font = 'Helvetica'
     for candidate in (Path('C:/Windows/Fonts/Nirmala.ttf'), Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')):
         if candidate.is_file():
@@ -44,10 +44,14 @@ def generate_audit_pdf(old_script, new_script, critique, image_paths, output_pat
     if len(visuals) == 1:
         visuals.append(paragraph('No supported visual failure timestamp was identified; no screenshot was fabricated.'))
     pages.append(visuals)
-    pages.append([paragraph('Script Revisions', heading), paragraph('Original spoken transcript', subheading),
-                  paragraph(old_script or 'No usable speech transcript was available.', cap=4500), Spacer(1, 14),
-                  paragraph('One rewrite attempt — review before publishing', subheading),
-                  paragraph(new_script or 'Rewrite unavailable. See the critique and saved diagnostics.', cap=4500)])
+    revisions=Table([
+        [paragraph('Original spoken transcript',subheading),paragraph('Edited revision — review before publishing',subheading)],
+        [paragraph(old_script or 'No usable speech transcript was available.',cap=4500),
+         paragraph(new_script or 'Revision unavailable. See the critique and saved diagnostics.',cap=4500)]],
+        colWidths=[doc.width/2,doc.width/2])
+    revisions.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),6),
+        ('RIGHTPADDING',(0,0),(-1,-1),8),('LINEAFTER',(0,0),(0,-1),.5,colors.HexColor('#b8c9c3'))]))
+    pages.append([paragraph('Script Revisions', heading),revisions])
     story = []
     for index, page in enumerate(pages):
         if index:

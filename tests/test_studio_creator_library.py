@@ -27,12 +27,19 @@ class CreatorLibraryTests(unittest.TestCase):
                 '[B-ROLL: Open notebook showing blank pages] This notebook has 80 blank pages. '
                 '[B-ROLL: Write missing groceries on a page] One can hold groceries; another can hold the ridiculous business idea that arrives '
                 'while you remember the onions. Give those thoughts somewhere to land. Buy the notebook.')
-        complete = Mock(return_value={'final_script': text})
+        from actor_critic_fixtures import CRITIQUE
+        body=('[B-ROLL: Forgotten groceries at checkout] [B-ROLL: Open notebook with blank pages] This notebook has 80 blank pages. '
+              '[B-ROLL: Write a grocery list on a page] Use one for groceries and another for the idea that shows up halfway through the onions. '
+              'Writing both down puts those thoughts on paper. Grab a notebook before your next grocery run.')
+        hooks=[dict(kind='problem',text='Forgotten groceries get awkward at the checkout.'),
+               dict(kind='curiosity',text='A blank page can hold more than groceries.'),
+               dict(kind='contrarian',text='Your next idea does not need another app.')]
+        complete = Mock(side_effect=[{'final_script':text},CRITIQUE,{'script_body':body,'hooks':hooks}])
         gate = dict(has_cta=True, has_visual_demo=False, invented_experience=False,
                     overall_score=85, critique='Specific observation and grounded integration.')
         with patch('studio_pipeline.score_draft_script', return_value=gate):
             result = writer.write_final_script({'brief': brief}, complete, lambda x: None, lambda *x: None)
-        context = json.loads(complete.call_args.args[0].split(' BRIEF: ', 1)[1])
+        context = json.loads(complete.call_args_list[0].args[0].split('\nBRIEF: ', 1)[1])
         self.assertEqual(context['content_mode'], 'ugc')
         refs = context['creator_references']
         self.assertTrue(all(card['principle'] and card['apply'] for card in refs))

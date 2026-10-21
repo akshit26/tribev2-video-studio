@@ -21,6 +21,47 @@ def extract_audio(video, destination):
     return destination
 
 
+def extract_visual_frames(video,output,duration):
+    """Bounded CPU FFmpeg sampling: opening frames plus the rest of the clip."""
+    import subprocess
+    import imageio_ffmpeg
+    output=Path(output)/'frames'
+    output.mkdir(parents=True,exist_ok=True)
+    times=sorted({round(t,3) for t in (0.,.7,2.,duration*.25,duration*.5,duration*.75,max(0,duration-.2)) if 0<=t<duration})
+    frames=[]
+    for i,timestamp in enumerate(times):
+        target=output/f'sample_{i}.jpg'
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(),'-nostdin','-y','-v','error','-ss',str(timestamp),
+            '-i',str(video),'-frames:v','1','-vf','scale=640:640:force_original_aspect_ratio=decrease',str(target)],
+            capture_output=True,check=True,timeout=30,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if not target.is_file():raise ValueError('FFmpeg did not return the sampled frame.')
+        frames.append({'timestamp':timestamp,'path':str(target)})
+    return frames
+
+
+async def extract_media_parallel(video,output,duration,language='auto',corrected=None):
+    """Run visual FFmpeg and audio/Whisper concurrently without blocking ASGI."""
+    import asyncio
+    import time
+    started=time.monotonic()
+    def audio():
+        if corrected and corrected.get('manually_corrected') is True:
+            return corrected_transcript_pacing(corrected,duration)
+        return transcribe_pacing(video,output,language)
+    frames,pacing=await asyncio.gather(asyncio.to_thread(extract_visual_frames,video,output,duration),
+                                      asyncio.to_thread(audio),return_exceptions=True)
+    warnings=[]
+    if isinstance(frames,Exception):
+        warnings.append('Visual sampling unavailable: '+type(frames).__name__)
+        frames=[]
+    if isinstance(pacing,Exception):
+        warnings.append('Audio transcription unavailable: '+type(pacing).__name__)
+        pacing={'available':False,'duration_seconds':duration,'wpm':None,'words':[],
+                'text':'','dead_air':[],'note':warnings[-1]}
+    return {'frames':frames,'pacing':pacing,'warnings':warnings,
+            'extraction_seconds':round(time.monotonic()-started,3)}
+
+
 def pacing_from_words(words, duration):
     """Speech-free intervals, not acoustic silence: background music may remain."""
     if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:

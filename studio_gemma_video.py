@@ -52,7 +52,7 @@ async def poll_result(token,identifier):
     import httpx
     # Fixed host and validated UUID: never forward credentials to a response-provided URL.
     url='https://api.nvcf.nvidia.com/v2/nvcf/pexec/status/'+request_id({}, {'requestId':identifier})
-    async with httpx.AsyncClient(timeout=600,follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=180,follow_redirects=False) as client:
         while True:
             response=await client.get(url,headers={'Authorization':'Bearer '+token,'NVCF-POLL-SECONDS':'10'})
             if response.status_code==202:
@@ -152,16 +152,35 @@ async def _analyze(video,model=MODEL,include_evidence=False):
     if not token:
         raise ValueError('Set GEMMA_API_KEY or NVIDIA_API_KEY on the server.')
     media = await asyncio.to_thread(_video_data, video)
+    if 'nemotron' in model.lower() or 'llama' in model.lower():
+        from studio_script_team import chat_json
+        from studio_script_hf import HostedWriterError
+        instruction=PROMPT+(' Also return visual_frames: up to eight {timestamp, observation} objects grounded only in the video.' if include_evidence else '')
+        try:
+            result,_=await asyncio.to_thread(chat_json,token,model,instruction,
+                [{'type':'text','text':'Analyze this uploaded MP4.'},{'type':'video_url','video_url':{'url':media}}],
+                3500 if include_evidence else 1800,.2)
+        except (HostedWriterError,ValueError) as exc:
+            raise ViralityAPIError(str(exc)) from None
+        if include_evidence:
+            frames=result.pop('visual_frames',None)
+            if (not isinstance(frames,list) or not 1<=len(frames)<=8 or any(
+                not isinstance(f,dict) or set(f)!={'timestamp','observation'} or type(f['timestamp']) not in (int,float)
+                or not math.isfinite(f['timestamp']) or f['timestamp']<0 or not isinstance(f['observation'],str)
+                or not f['observation'].strip() or len(f['observation'])>1200 for f in frames)):
+                raise ViralityAPIError('Invalid timestamped video evidence.')
+            return dict(validate_result(json.dumps(result)),visual_frames=frames)
+        return validate_result(json.dumps(result))
     try:
         async with AsyncOpenAI(base_url=BASE_URL, api_key=token, max_retries=0,
-                               timeout=httpx.Timeout(600, connect=600, write=600, pool=600)) as client:
+                               timeout=httpx.Timeout(180, connect=180, write=180, pool=180)) as client:
             raw = await client.chat.completions.with_raw_response.create(
                 model=model, messages=[{'role': 'user', 'content':[
                     {'type': 'text', 'text': (PROMPT.replace('exactly these fields:', 'these fields and the visual_frames evidence field:').replace('Do not add fields, markdown or commentary.', 'Do not add markdown or commentary.') if include_evidence else PROMPT) + (' For this request add one visual_frames array of up to 8 objects: {timestamp: seconds, observation: concise visible evidence}. Include the first frame and important hook/pacing changes. Describe only pixels you can perceive. Do not infer speech.' if include_evidence else '')},
                     {'type': 'video_url', 'video_url': {'url': media}}]}],
-                temperature=.2, max_tokens=16384 if include_evidence else 1800, stream=False,
-                extra_body={'chat_template_kwargs': {'enable_thinking': include_evidence}},
-                extra_headers={'NVCF-POLL-SECONDS':'300'})
+                temperature=.2, max_tokens=16384, stream=False,
+                extra_body={'chat_template_kwargs': {'enable_thinking': True}},
+                extra_headers={'NVCF-POLL-SECONDS':'180'})
             if raw.status_code==202:
                 try:pending=raw.http_response.json()
                 except ValueError:pending=None
@@ -214,6 +233,6 @@ async def analyze_virality(video: Path,model=MODEL,include_evidence=False) -> di
                     if attempt or not exc.diagnostics.get('transient_connection'):
                         raise
                     await asyncio.sleep(1)
-        return await asyncio.wait_for(resilient(), timeout=600)
+        return await asyncio.wait_for(resilient(), timeout=180)
     except TimeoutError:
-        raise ViralityAPIError('Video assessment timed out after 600 seconds. No verdict was assigned.') from None
+        raise ViralityAPIError('Video assessment timed out after 180 seconds. No verdict was assigned.') from None

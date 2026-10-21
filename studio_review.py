@@ -306,7 +306,7 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
         nonlocal part_number
         if script_mode:
             seed = report["script_request"]["brief"].get("generation_seed", 42)
-            creative = label.startswith("Hook options") or label.startswith("Draft")
+            creative = label.startswith(("Hook options","Draft","Editor"))
             freedom = report["script_request"]["brief"].get("creative_freedom", "wild")
             hook_temperature = {"wild": .95, "balanced": .8, "restrained": .65}.get(freedom, .95)
             gpu_cache["sampling"] = {"temperature": hook_temperature if label.startswith("Hook options") else .65 if creative else 0,
@@ -342,6 +342,12 @@ def semantic_worker(output: Path, device: str, budget_mb: int, probe: bool = Fal
         gpu_cache['save_partial']=save_partial
         try:
             active_system = script_system if script_mode else SYSTEM
+            if script_mode and label.startswith('Internal critique'):
+                from studio_evaluation import CRITIC_SYSTEM
+                active_system=CRITIC_SYSTEM
+            elif script_mode and label.startswith('Editor'):
+                from studio_editor import EDITOR_SYSTEM
+                active_system=EDITOR_SYSTEM
             if script_mode and label.startswith("Hook critique"):
                 active_system += ("\nYou are reviewing staged entertainment, not a scientific paper. Never reject a fictional premise "
                     "because it is fictional, lacks clinical evidence or is not real microbiology. A talking flake, courtroom "

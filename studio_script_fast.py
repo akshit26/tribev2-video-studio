@@ -4,7 +4,7 @@ import sys
 from studio_script_team import chat_json as chat_completion, draft_reasoning_effort
 MODEL='nvidia/nemotron-3.5-super-vl-120b-a12b'
 NAME='Nemotron 3.5 Super (fast writer)'
-PROFILE='fast-text-v3-balanced-drafts-600s'
+PROFILE='fast-text-v4-actor-critic-180s'
 def nvidia_token():
     from studio_script_nvidia import nvidia_token as credential
     return credential('FAST_WRITER_API_KEY') or credential('GEMMA_API_KEY') or credential('NVIDIA_API_KEY') or credential('GPT_OSS_API_KEY')
@@ -23,5 +23,5 @@ def run_fast_writer(output,request,progress):
     if path.exists():
         result=json.loads(path.read_text(encoding='utf-8'))
         from studio_evaluation import draft_scoring_model
-        result['pipeline']={'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'API pre-scoring gate; one rewrite maximum.'}
+        result.setdefault('pipeline',{'draft_model':MODEL,'analysis_model':draft_scoring_model(),'analysis_mode':'Archived scoring pipeline.'})
         _write_json(path,result)

@@ -117,13 +117,15 @@ def run_hf_writer(output, request, progress, provider=None):
     from studio_review_cache import CompletionCache
     from studio_script_writer import SYSTEM, WRITER_VERSION, library, run_writer, system_prompt
     from studio_script_examples import catalog
+    from studio_evaluation import CRITIC_SYSTEM
+    from studio_editor import EDITOR_SYSTEM
     brief = request["brief"]
     SYSTEM = system_prompt(brief)
     validate_configuration(brief)
     backend = brief.get('writer_backend','nvidia') if provider else "huggingface"
     model, token = (provider.MODEL, provider.nvidia_token()) if provider else (brief["hf_model"], hf_token())
     effort_profile=provider.draft_reasoning_effort(2500,'Draft 1') if provider and hasattr(provider,'draft_reasoning_effort') else None
-    signature = hashlib.sha256(json.dumps(["hosted-writer-v3", backend, model, getattr(provider, "PROFILE", None), effort_profile, SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps(["hosted-writer-v4", backend, model, getattr(provider, "PROFILE", None), effort_profile, SYSTEM, CRITIC_SYSTEM, EDITOR_SYSTEM, WRITER_VERSION, library(), catalog()], sort_keys=True).encode()).hexdigest()
     prefix = backend if provider else "hf"
     path = output / (prefix + "_writer_checkpoint.json")
     try:
@@ -133,6 +135,7 @@ def run_hf_writer(output, request, progress, provider=None):
     cache = CompletionCache(checkpoint, signature)
     stats = {"backend": backend, "model": model, "calls_this_run": 0, "cache_hits": 0, "usage": [], "stage_timings": []}
     fraction = 0
+    last_call = {}
 
     def report(value, stage):
         nonlocal fraction
@@ -143,6 +146,7 @@ def run_hf_writer(output, request, progress, provider=None):
         if provider and hasattr(provider,'prepare_prompt'):
             prompt=provider.prepare_prompt(prompt,label,request)
         prompt_hash = hashlib.sha256((prompt + str(tokens)).encode()).hexdigest()
+        last_call.update(label=label,prompt_hash=prompt_hash)
         cached = cache.get(label, prompt_hash)
         if cached:
             stats["cache_hits"] += 1
@@ -152,8 +156,15 @@ def run_hf_writer(output, request, progress, provider=None):
         display=provider.stage_model(label) if provider and hasattr(provider,'stage_model') else provider.NAME if provider else MODELS[model]
         progress(1 + 98*fraction, f"{display}: {label}")
         stats["calls_this_run"] += 1
-        creative = label.startswith(("Hook options", "Draft")) and "repair" not in label
+        creative = label.startswith(("Hook options", "Draft", "Editor")) and "repair" not in label
         temperature = .85 if creative and label.startswith("Hook options") else .7 if creative else 0
+        stage_system=SYSTEM
+        if label.startswith('Internal critique'):
+            from studio_evaluation import CRITIC_SYSTEM
+            stage_system=CRITIC_SYSTEM
+        elif label.startswith('Editor'):
+            from studio_editor import EDITOR_SYSTEM
+            stage_system=EDITOR_SYSTEM
         if provider:
             import time
             last_preview = 0
@@ -168,9 +179,9 @@ def run_hf_writer(output, request, progress, provider=None):
                     last_preview = time.monotonic()
             preview.status=lambda message:progress(1 + 98*fraction, f'{display}: {label} — {message}')
             if hasattr(provider,'complete_stage'):
-                result,usage=provider.complete_stage(token,model,SYSTEM,prompt,tokens,1 if creative else 0,preview,label)
+                result,usage=provider.complete_stage(token,model,stage_system,prompt,tokens,.7 if creative else 0,preview,label)
             else:
-                result, usage = provider.chat_completion(token, model, SYSTEM, prompt, tokens, 1 if creative else 0, preview)
+                result, usage = provider.chat_completion(token, model, stage_system, prompt, tokens, .7 if creative else 0, preview)
             if not brief.get('content_duration') and label.startswith('Draft') and 'repair' not in label and 'final_script' not in result:
                 progress(1 + 98*fraction, "Making the speech sound natural")
                 try:
@@ -189,7 +200,7 @@ def run_hf_writer(output, request, progress, provider=None):
                         result['missing_proof']=(warnings if isinstance(warnings,list) else [])[:9]+['Natural-voice edit could not complete; review the original draft wording.']
                     stats.setdefault('warnings',[]).append('Natural-voice edit unavailable; original generated text retained.')
         else:
-            result, usage = chat_completion(token, model, SYSTEM, prompt, tokens, temperature)
+            result, usage = chat_completion(token, model, stage_system, prompt, tokens, temperature)
         stats["usage"].append(usage)
         cache.remember(label, prompt_hash, result)
         _write_json(path, cache.snapshot())
@@ -216,7 +227,14 @@ def run_hf_writer(output, request, progress, provider=None):
         cache.reject(label,prompt_hash)
         _write_json(path,cache.snapshot())
     complete.reject=reject
+    def reject_last(label):
+        if last_call.get('label')==label:
+            cache.reject(label,last_call['prompt_hash'])
+            _write_json(path,cache.snapshot())
+    complete.reject_last=reject_last
     complete.system_prompt=SYSTEM
+    complete.model=model
+    complete.stage_systems=True
 
     try:
         run_writer(output, complete, report)

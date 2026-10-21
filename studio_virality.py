@@ -22,10 +22,11 @@ def cognitive_model():
 
 def validate_cognitive_response(raw, duration):
     import math
-    required = {'attention_retention_score', 'emotional_arousal_state', 'cognitive_load_warning',
-                'psychological_critique', 'failure_timestamps'}
-    if not isinstance(raw, dict) or set(raw) != required:
+    required = {'attention_retention_score', 'emotional_arousal_state', 'cognitive_load_warning','psychological_critique'}
+    if not isinstance(raw, dict) or not required<=set(raw) or set(raw)-required-{'failure_timestamps','visual_observations'}:
         raise ValueError('Cognitive simulator returned an invalid JSON schema.')
+    raw=dict(raw)
+    raw.setdefault('failure_timestamps',[])
     if type(raw['attention_retention_score']) is not int or not 0 <= raw['attention_retention_score'] <= 100:
         raise ValueError('Attention score must be an integer from 0 to 100.')
     if type(raw['cognitive_load_warning']) is not bool:
@@ -45,26 +46,39 @@ def validate_cognitive_response(raw, duration):
                 or not 0 <= item['timestamp'] < duration
                 or not isinstance(item['reason'], str) or not item['reason'].strip() or len(item['reason']) > 500):
             raise ValueError('Invalid cognitive failure timestamp or reason.')
+    observations=raw.get('visual_observations',[])
+    if not isinstance(observations,list) or len(observations)>8:
+        raise ValueError('Invalid visual observations.')
+    for item in observations:
+        if (not isinstance(item,dict) or set(item)!={'timestamp','observation'}
+            or type(item['timestamp']) not in (int,float) or not math.isfinite(item['timestamp'])
+            or not 0<=item['timestamp']<duration or not isinstance(item['observation'],str)
+            or not item['observation'].strip() or len(item['observation'])>1200):
+            raise ValueError('Invalid timestamped visual observation.')
     return raw
 
 
-def simulate_cognitive_response(visual_frame_data, transcript, pacing, brief=None):
-    """Cloud reasoning over VLM observations and ASR; no claim to measure minds."""
+def simulate_cognitive_response(visual_frame_data, transcript, pacing, brief=None,progress=None):
+    """One cloud simulation over real sampled pixels, Whisper and pacing."""
     import json
     import math
     from studio_script_team import chat_json
     from studio_script_nvidia import nvidia_token
-    token = nvidia_token('COGNITIVE_API_KEY') or nvidia_token()
+    token = nvidia_token('COGNITIVE_API_KEY') or nvidia_token('GEMMA_API_KEY') or nvidia_token()
     if not token:
         raise ValueError('Configure NVIDIA_API_KEY for the cognitive simulator.')
-    model = cognitive_model()
+    has_pixels=any(frame.get('path') for frame in visual_frame_data)
+    model = DEFAULT_COGNITIVE_MODEL if has_pixels else cognitive_model()
     system = ('Act as a cognitive psychology and viral marketing simulator. Analyze this video\'s visual pacing, '
         'spoken transcript, and audio WPM. Map the audience\'s psychological reaction and output a JSON object with: '
         'attention_retention_score (integer 0-100), emotional_arousal_state (identify primary high/low arousal emotion), '
         'cognitive_load_warning (boolean), psychological_critique (string), failure_timestamps '
         '(array of at most 3 objects with timestamp in seconds and reason). '
         'These are uncalibrated editorial hypotheses, never measured audience reactions, neural activity or outcome probabilities. '
-        'You receive timestamped visual-model observations, NOT pixels: attribute limitations and do not invent visuals. '
+        + ('You receive real sampled video images labelled with their exact media timestamps. '
+           'Also return visual_observations: up to 8 objects with timestamp and observation, grounded only in supplied images. '
+           'Use only supplied frame timestamps for failures and observations. Unsampled action is unknown. ' if has_pixels else
+           'You receive timestamped visual-model observations, NOT pixels: attribute limitations and do not invent visuals. ')+
         'Cite exact supported times for hook/pacing failures; do not invent timestamps. '
         'Speech-free gaps are not necessarily acoustic silence. If audio evidence is unavailable, say so and do not infer speech. '
         'Respect the audience, natural creator voice and supplied product facts. Do not suggest invented medical or personal claims. '
@@ -72,10 +86,31 @@ def simulate_cognitive_response(visual_frame_data, transcript, pacing, brief=Non
     duration = pacing.get('duration_seconds')
     if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
         raise ValueError('A verified media duration is required for simulation.')
-    prompt = json.dumps({'visual_frame_data': visual_frame_data, 'transcript': transcript,
-        'audio_pacing': {k: v for k, v in pacing.items() if k != 'words'}, 'brief': brief or {}}, ensure_ascii=False)
-    result, _ = chat_json(token, model, system, prompt, 2500, .3)
-    return dict(validate_cognitive_response(result, duration), model=model,
+    metadata=[{k:v for k,v in frame.items() if k!='path'} for frame in visual_frame_data]
+    prompt = json.dumps({'visual_frame_data': metadata, 'transcript': transcript,
+        'audio_pacing': {k: v for k, v in pacing.items() if k != 'words'},
+        'word_timestamps':pacing.get('words',[])[:3000], 'brief': brief or {}}, ensure_ascii=False)
+    if has_pixels:
+        import base64
+        from pathlib import Path
+        content=[{'type':'text','text':prompt}]
+        for frame in visual_frame_data[:8]:
+            if not frame.get('path'):continue
+            data=Path(frame['path']).read_bytes()
+            if not data or len(data)>1_000_000:raise ValueError('Sampled visual frame is empty or too large.')
+            content.extend([{'type':'text','text':f"Video frame at {frame['timestamp']:.3f} seconds"},
+                {'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(data).decode('ascii')}}])
+        prompt=content
+    def preview(content):pass
+    if progress:preview.status=progress
+    result, _ = chat_json(token, model, system, prompt, 2500, .3,preview if progress else None)
+    result=validate_cognitive_response(result,duration)
+    if has_pixels:
+        allowed=[frame['timestamp'] for frame in visual_frame_data]
+        for entry in result['failure_timestamps']+result.get('visual_observations',[]):
+            if not any(abs(entry['timestamp']-t)<.01 for t in allowed):
+                raise ValueError('Simulator cited a timestamp without a supplied frame.')
+    return dict(result, model=model,
                 interpretation='Uncalibrated editorial simulation; not measured retention or emotion.')
 
 

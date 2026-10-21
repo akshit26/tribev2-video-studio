@@ -24,6 +24,7 @@ env/
 # IDE
 .vscode/
 .idea/
+/.agents/
 
 # Training artifacts
 lightning_logs/
